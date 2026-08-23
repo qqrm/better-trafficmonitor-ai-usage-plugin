@@ -4,6 +4,8 @@ A native [TrafficMonitor](https://github.com/zhongyang219/TrafficMonitor) plug-i
 
 It reads data already stored by the desktop clients on the same Windows machine. It does not open a browser, request a web-session token, start a helper process, or make network requests.
 
+![Claude and Codex usage graphs in the TrafficMonitor taskbar widget](docs/images/taskbar-preview.png)
+
 ## Display items
 
 - `Claude Usage`: Claude five-hour and seven-day burn-down history in one compact row.
