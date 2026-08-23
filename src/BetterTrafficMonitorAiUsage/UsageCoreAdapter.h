@@ -23,6 +23,7 @@ class CUsageCoreAdapter {
 public:
     void RefreshIfNeeded();
     UsageMetric GetMetric(UsageWindow window) const;
+    long long GetClaudeNextResetAtUnixSeconds() const;
     std::vector<UsageHistoryPoint> GetHistory(UsageWindow window) const;
 private:
     const UsageCoreMetric& MetricFor(UsageWindow window) const;

@@ -2,11 +2,14 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -16,13 +19,38 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build release archive
+      - id: version
+        name: Read release version
         shell: pwsh
-        run: ./scripts/build-release.ps1 -Version ($env:GITHUB_REF_NAME).TrimStart('v')
+        run: |
+          $match = Select-String -LiteralPath crates/usage_core/Cargo.toml -Pattern '^version\s*=\s*"(\d+\.\d+\.\d+)"\s*$' | Select-Object -First 1
+          if (-not $match) { throw 'A semantic version is required in crates/usage_core/Cargo.toml' }
+          "version=$($match.Matches[0].Groups[1].Value)" >> $env:GITHUB_OUTPUT
+      - id: release
+        name: Check whether the version is already released
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "v${{ steps.version.outputs.version }}"
+          gh release view $tag --json tagName 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            'exists=true' >> $env:GITHUB_OUTPUT
+          } elseif ($LASTEXITCODE -eq 1) {
+            'exists=false' >> $env:GITHUB_OUTPUT
+          } else {
+            throw "Could not determine whether GitHub release $tag exists"
+          }
+      - name: Build release archive
+        if: steps.release.outputs.exists == 'false'
+        shell: pwsh
+        run: ./scripts/build-release.ps1 -Version ${{ steps.version.outputs.version }}
       - name: Publish GitHub release
+        if: steps.release.outputs.exists == 'false'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $assets = @(Get-ChildItem dist\*.zip, dist\*.sha256 | ForEach-Object FullName)
-          gh release create $env:GITHUB_REF_NAME @assets --generate-notes --title "Better TrafficMonitor AI Usage $env:GITHUB_REF_NAME"
+          $tag = "v${{ steps.version.outputs.version }}"
+          gh release create $tag @assets --target $env:GITHUB_SHA --generate-notes --title "Better TrafficMonitor AI Usage $tag"

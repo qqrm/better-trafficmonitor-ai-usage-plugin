@@ -115,6 +115,26 @@ std::wstring FormatDisplayedPercentage(bool available, double used_percentage)
     return buffer;
 }
 
+std::wstring FormatResetTime(long long reset_at_unix_seconds)
+{
+    if (reset_at_unix_seconds <= 0)
+        return L"unavailable";
+
+    const CTime reset_at(static_cast<__time64_t>(reset_at_unix_seconds));
+    return std::wstring(reset_at.Format(L"%Y-%m-%d %H:%M local"));
+}
+
+std::wstring FormatLimitDetails(const UsageMetric& metric)
+{
+    if (!metric.available)
+        return L"unavailable (no recent local data)";
+
+    const double used = max(0.0, min(100.0, metric.percentage));
+    wchar_t buffer[48]{};
+    swprintf_s(buffer, L"used %.0f%%, %.0f%% remaining", used, 100.0 - used);
+    return buffer;
+}
+
 float GetUsageRatio(const UsageMetric& metric)
 {
     if (!metric.available)
@@ -806,7 +826,7 @@ const wchar_t* CBetterTrafficMonitorAiUsagePlugin::GetInfo(PluginInfoIndex index
         value = L"Copyright (C) 2026 Better TrafficMonitor AI Usage contributors";
         break;
     case TMI_VERSION:
-        value = L"1.0.0";
+        value = L"1.1.0";
         break;
     case TMI_URL:
         value = L"https://github.com/qqrm/better-trafficmonitor-ai-usage-plugin";
@@ -822,13 +842,13 @@ const wchar_t* CBetterTrafficMonitorAiUsagePlugin::GetTooltipInfo()
 {
     g_usage_core.RefreshIfNeeded();
 
-    const wchar_t* suffix = g_graph_display_mode.load(std::memory_order_relaxed) == GraphDisplayMode::Remaining ? L" remaining" : L" used";
     const UsageMetric claude_five_hour = g_usage_core.GetMetric(UsageWindow::Claude5h);
     const UsageMetric claude_seven_day = g_usage_core.GetMetric(UsageWindow::Claude7d);
     const UsageMetric codex_seven_day = g_usage_core.GetMetric(UsageWindow::Codex7d);
-    m_tooltip_text_cache = L"Claude 5h: " + FormatDisplayedPercentage(claude_five_hour.available, claude_five_hour.percentage) + suffix;
-    m_tooltip_text_cache += L"\nClaude 7d: " + FormatDisplayedPercentage(claude_seven_day.available, claude_seven_day.percentage) + suffix;
-    m_tooltip_text_cache += L"\n\nCodex 7d: " + FormatDisplayedPercentage(codex_seven_day.available, codex_seven_day.percentage) + suffix;
+    m_tooltip_text_cache = L"Claude 5h: " + FormatLimitDetails(claude_five_hour);
+    m_tooltip_text_cache += L"\nClaude 7d: " + FormatLimitDetails(claude_seven_day);
+    m_tooltip_text_cache += L"\nClaude next reset: " + FormatResetTime(g_usage_core.GetClaudeNextResetAtUnixSeconds());
+    m_tooltip_text_cache += L"\n\nCodex 7d: " + FormatLimitDetails(codex_seven_day) + L"; resets: " + FormatResetTime(codex_seven_day.reset_at_unix_seconds);
     return m_tooltip_text_cache.c_str();
 }
 

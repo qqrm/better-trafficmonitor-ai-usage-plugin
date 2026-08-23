@@ -42,6 +42,12 @@ UsageMetric CUsageCoreAdapter::GetMetric(UsageWindow window) const
     return UsageMetric{ source.available != 0, source.used_percentage, source.reset_at_unix_seconds };
 }
 
+long long CUsageCoreAdapter::GetClaudeNextResetAtUnixSeconds() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_snapshot.claude_next_reset_at_unix_seconds;
+}
+
 std::vector<UsageHistoryPoint> CUsageCoreAdapter::GetHistory(UsageWindow window) const
 {
     std::lock_guard<std::mutex> lock(m_mutex);

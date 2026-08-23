@@ -1,4 +1,5 @@
 use chrono::DateTime;
+use leveldb_core::{Record, parse_log_bytes, parse_table_bytes};
 use serde_json::Value;
 use std::env;
 use std::fs::{self, File};
@@ -12,6 +13,8 @@ const CODEX_HISTORY_WINDOW: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const MAX_CODEX_FILES: usize = 24;
 const MAX_CODEX_DIRECTORY_ENTRIES: usize = 4096;
 const MAX_CODEX_FILE_TAIL_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_CLAUDE_LOCAL_STORAGE_FILES: usize = 16;
+const MAX_CLAUDE_LOCAL_STORAGE_FILE_BYTES: u64 = 4 * 1024 * 1024;
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -52,6 +55,7 @@ pub struct UsageCoreSnapshot {
     pub claude_5h: UsageCoreMetric,
     pub claude_7d: UsageCoreMetric,
     pub codex_7d: UsageCoreMetric,
+    pub claude_next_reset_at_unix_seconds: i64,
 }
 
 #[derive(Clone, Copy)]
@@ -165,6 +169,75 @@ fn load_claude() -> (UsageCoreMetric, UsageCoreMetric) {
         normalized_metric(five_hour, Duration::from_secs(5 * 60 * 60)),
         normalized_metric(seven_day, CODEX_HISTORY_WINDOW),
     )
+}
+
+fn claude_reset_from_record(record: &Record, now: i64) -> Option<(u64, i64)> {
+    if record.deleted {
+        return None;
+    }
+    let json_start = record.value.iter().position(|byte| *byte == b'{')?;
+    let value = serde_json::from_slice::<Value>(&record.value[json_start..]).ok()?;
+    let reset_at = value.get("resetsAt")?.as_i64()?;
+    let observed_at = value.get("observedAt")?.as_f64()? as i64;
+    value.get("utilization")?.as_f64()?;
+    if reset_at <= now
+        || observed_at <= 0
+        || now.saturating_sub(observed_at) > CLAUDE_CACHE_MAX_AGE.as_secs() as i64
+    {
+        return None;
+    }
+    Some((record.seq, reset_at))
+}
+
+fn load_claude_next_reset(claude_data_dir: &Path) -> i64 {
+    let local_storage = claude_data_dir.join("Local Storage/leveldb");
+    let Ok(entries) = fs::read_dir(local_storage) else {
+        return 0;
+    };
+    let mut files = entries
+        .flatten()
+        .filter_map(|entry| {
+            let path = entry.path();
+            let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+            if extension != "ldb" && extension != "sst" && extension != "log" {
+                return None;
+            }
+            let metadata = fs::metadata(&path).ok()?;
+            (metadata.len() <= MAX_CLAUDE_LOCAL_STORAGE_FILE_BYTES).then_some(path)
+        })
+        .collect::<Vec<_>>();
+    files.sort_by_key(|path| {
+        fs::metadata(path)
+            .and_then(|metadata| metadata.modified())
+            .ok()
+    });
+    files.reverse();
+    files.truncate(MAX_CLAUDE_LOCAL_STORAGE_FILES);
+
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or_default();
+    let mut newest = None;
+    for path in files {
+        let Ok(data) = fs::read(&path) else {
+            continue;
+        };
+        let records = match path.extension().and_then(|extension| extension.to_str()) {
+            Some(extension) if extension.eq_ignore_ascii_case("log") => {
+                parse_log_bytes(&data, &path).ok()
+            }
+            _ => parse_table_bytes(&data, &path).ok(),
+        };
+        for record in records.into_iter().flatten() {
+            if let Some(candidate) = claude_reset_from_record(&record, now) {
+                if newest.is_none_or(|current: (u64, i64)| candidate.0 > current.0) {
+                    newest = Some(candidate);
+                }
+            }
+        }
+    }
+    newest.map(|(_, reset_at)| reset_at).unwrap_or_default()
 }
 
 fn codex_home() -> Option<PathBuf> {
@@ -299,6 +372,9 @@ pub unsafe extern "C" fn usage_core_refresh(out: *mut UsageCoreSnapshot) -> i32 
         return 0;
     }
     let (claude_5h, claude_7d) = load_claude();
+    let claude_next_reset_at_unix_seconds = newest_claude_cache()
+        .and_then(|path| path.parent().map(load_claude_next_reset))
+        .unwrap_or_default();
     let codex_7d = load_codex();
     // SAFETY: null was checked above; the ABI requires a writable snapshot.
     unsafe {
@@ -306,6 +382,7 @@ pub unsafe extern "C" fn usage_core_refresh(out: *mut UsageCoreSnapshot) -> i32 
             claude_5h,
             claude_7d,
             codex_7d,
+            claude_next_reset_at_unix_seconds,
         };
     }
     1
@@ -365,5 +442,19 @@ mod tests {
         });
 
         assert!(extract_weekly(&limits, 123).is_none());
+    }
+
+    #[test]
+    fn claude_reset_requires_fresh_usage_state() {
+        let record = Record {
+            key: Vec::new(),
+            value: b"\x01{\"resetsAt\":2000,\"utilization\":0.23,\"observedAt\":1500}".to_vec(),
+            seq: 42,
+            deleted: false,
+            origin_file: PathBuf::new(),
+        };
+
+        assert_eq!(claude_reset_from_record(&record, 1_600), Some((42, 2_000)));
+        assert_eq!(claude_reset_from_record(&record, 3_000), None);
     }
 }
