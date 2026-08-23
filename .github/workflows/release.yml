@@ -41,6 +41,7 @@ jobs:
           } else {
             throw "Could not determine whether GitHub release $tag exists"
           }
+          exit 0
       - name: Build release archive
         if: steps.release.outputs.exists == 'false'
         shell: pwsh
