@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # The plugin targets TrafficMonitor's v143/MFC toolchain. The moving
+    # windows-latest image now uses Visual Studio 2026 without x64 MFC.
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build release archive
+        shell: pwsh
+        run: ./scripts/build-release.ps1 -Version ($env:GITHUB_REF_NAME).TrimStart('v')
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @(Get-ChildItem dist\*.zip, dist\*.sha256 | ForEach-Object FullName)
+          gh release create $env:GITHUB_REF_NAME @assets --generate-notes --title "Better TrafficMonitor AI Usage $env:GITHUB_REF_NAME"

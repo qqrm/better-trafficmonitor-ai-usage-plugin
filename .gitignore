@@ -1,0 +1,16 @@
+/target/
+/.vs/
+/build/
+/dist/
+/bin/
+/obj/
+*.dll
+*.exp
+*.ilk
+*.lib
+*.obj
+*.pdb
+*.pch
+*.tlog
+*.vcxproj.user
+src/**/x64/

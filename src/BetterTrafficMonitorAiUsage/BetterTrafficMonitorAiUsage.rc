@@ -1,0 +1,61 @@
+#include "resource.h"
+#include <windows.h>
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,0
+ PRODUCTVERSION 1,0,0,0
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x40004L
+ FILETYPE 0x2L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "CompanyName", "QQRM\0"
+            VALUE "FileDescription", "Better TrafficMonitor AI Usage\0"
+            VALUE "FileVersion", "1.0.0\0"
+            VALUE "InternalName", "BetterTrafficMonitorAiUsage\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 QQRM\0"
+            VALUE "OriginalFilename", "BetterTrafficMonitorAiUsage.dll\0"
+            VALUE "ProductName", "Better TrafficMonitor AI Usage\0"
+            VALUE "ProductVersion", "1.0.0\0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
+
+IDD_DISPLAY_OPTIONS DIALOGEX 0, 0, 274, 226
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Better TrafficMonitor AI Usage"
+FONT 9, "Segoe UI"
+BEGIN
+    GROUPBOX        "Graph values", -1, 8, 7, 258, 47
+    CONTROL         "Remaining (burn-down: 100% to 0%)", IDC_GRAPH_REMAINING, "Button", BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, 18, 20, 222, 12
+    CONTROL         "Used (0% to 100%)", IDC_GRAPH_USED, "Button", BS_AUTORADIOBUTTON, 18, 36, 222, 12
+
+    GROUPBOX        "Single item in a tall cell", -1, 8, 60, 258, 78
+    CONTROL         "Center", IDC_LAYOUT_CENTER, "Button", BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, 18, 75, 100, 12
+    CONTROL         "Top", IDC_LAYOUT_TOP, "Button", BS_AUTORADIOBUTTON, 18, 91, 100, 12
+    CONTROL         "Bottom", IDC_LAYOUT_BOTTOM, "Button", BS_AUTORADIOBUTTON, 138, 75, 100, 12
+    CONTROL         "Stretch graph", IDC_LAYOUT_STRETCH, "Button", BS_AUTORADIOBUTTON, 138, 91, 100, 12
+    LTEXT           "The provider mark remains compact in every mode.", -1, 18, 111, 220, 17
+
+    GROUPBOX        "Claude colors", -1, 8, 144, 258, 52
+    CONTROL         "Monochrome", IDC_COLOR_MONOCHROME, "Button", BS_AUTORADIOBUTTON | WS_GROUP | WS_TABSTOP, 18, 159, 105, 12
+    CONTROL         "Adaptive", IDC_COLOR_ADAPTIVE, "Button", BS_AUTORADIOBUTTON, 18, 175, 105, 12
+    CONTROL         "Always colored", IDC_COLOR_ALWAYS, "Button", BS_AUTORADIOBUTTON, 138, 159, 105, 12
+    LTEXT           "Adaptive: colored with two rows, monochrome when alone.", -1, 138, 175, 118, 17
+
+    DEFPUSHBUTTON   "OK", IDOK, 162, 204, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 216, 204, 50, 14
+END

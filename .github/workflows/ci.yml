@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    # The plugin targets TrafficMonitor's v143/MFC toolchain. The moving
+    # windows-latest image now uses Visual Studio 2026 without x64 MFC.
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build and package
+        shell: pwsh
+        run: ./scripts/build-release.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BetterTrafficMonitorAiUsage-x64
+          path: |
+            dist/*.zip
+            dist/*.sha256
