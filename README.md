@@ -38,7 +38,7 @@ The plug-in currently ships for x64 TrafficMonitor. The DLL architecture must ma
 - Claude Desktop: `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\plan-usage-history.json`
 - Codex: `%CODEX_HOME%\sessions\**\*.jsonl`, or `%USERPROFILE%\.codex\sessions\**\*.jsonl` when `CODEX_HOME` is unset
 
-Data is refreshed at most once every 30 seconds. Claude data older than 20 minutes is treated as unavailable. Codex history is bounded to the newest 24 session files, 2 MiB per file, and seven days of samples.
+Data is refreshed at most once every 30 seconds. Claude usage history is treated as unavailable after one hour; Claude Desktop normally samples it every 15 minutes but can skip individual polls. Codex history is bounded to the newest 24 session files, 2 MiB per file, and seven days of samples.
 
 ## Build
 

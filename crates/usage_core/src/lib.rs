@@ -8,7 +8,10 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
 pub const MAX_HISTORY_POINTS: usize = 128;
-const CLAUDE_CACHE_MAX_AGE: Duration = Duration::from_secs(20 * 60);
+// Claude Desktop normally appends usage samples every 15 minutes, but may skip
+// individual polls. Do not hide both Claude windows after one missed update.
+const CLAUDE_HISTORY_MAX_AGE: Duration = Duration::from_secs(60 * 60);
+const CLAUDE_RATE_LIMIT_MAX_AGE: Duration = Duration::from_secs(20 * 60);
 const CODEX_HISTORY_WINDOW: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const MAX_CODEX_FILES: usize = 24;
 const MAX_CODEX_DIRECTORY_ENTRIES: usize = 4096;
@@ -94,6 +97,20 @@ fn normalized_metric(mut samples: Vec<Sample>, window: Duration) -> UsageCoreMet
     metric
 }
 
+fn metric_if_recent(metric: UsageCoreMetric, now: i64, max_age: Duration) -> UsageCoreMetric {
+    let history_len = usize::min(metric.history_len as usize, MAX_HISTORY_POINTS);
+    let Some(latest) = metric.history[..history_len].last() else {
+        return UsageCoreMetric::default();
+    };
+    if latest.timestamp_unix_seconds <= 0
+        || latest.timestamp_unix_seconds > now.saturating_add(max_age.as_secs() as i64)
+        || now.saturating_sub(latest.timestamp_unix_seconds) > max_age.as_secs() as i64
+    {
+        return UsageCoreMetric::default();
+    }
+    metric
+}
+
 fn newest_claude_cache() -> Option<PathBuf> {
     let packages = PathBuf::from(env::var_os("LOCALAPPDATA")?).join("Packages");
     fs::read_dir(packages)
@@ -114,17 +131,6 @@ fn load_claude() -> (UsageCoreMetric, UsageCoreMetric) {
     let Some(path) = newest_claude_cache() else {
         return (UsageCoreMetric::default(), UsageCoreMetric::default());
     };
-    let Ok(metadata) = fs::metadata(&path) else {
-        return (UsageCoreMetric::default(), UsageCoreMetric::default());
-    };
-    if metadata
-        .modified()
-        .ok()
-        .and_then(|value| SystemTime::now().duration_since(value).ok())
-        .is_none_or(|age| age > CLAUDE_CACHE_MAX_AGE)
-    {
-        return (UsageCoreMetric::default(), UsageCoreMetric::default());
-    }
     let Ok(text) = fs::read_to_string(path) else {
         return (UsageCoreMetric::default(), UsageCoreMetric::default());
     };
@@ -165,9 +171,21 @@ fn load_claude() -> (UsageCoreMetric, UsageCoreMetric) {
             });
         }
     }
+    let now = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or_default();
     (
-        normalized_metric(five_hour, Duration::from_secs(5 * 60 * 60)),
-        normalized_metric(seven_day, CODEX_HISTORY_WINDOW),
+        metric_if_recent(
+            normalized_metric(five_hour, Duration::from_secs(5 * 60 * 60)),
+            now,
+            CLAUDE_HISTORY_MAX_AGE,
+        ),
+        metric_if_recent(
+            normalized_metric(seven_day, CODEX_HISTORY_WINDOW),
+            now,
+            CLAUDE_HISTORY_MAX_AGE,
+        ),
     )
 }
 
@@ -182,7 +200,7 @@ fn claude_reset_from_record(record: &Record, now: i64) -> Option<(u64, i64)> {
     value.get("utilization")?.as_f64()?;
     if reset_at <= now
         || observed_at <= 0
-        || now.saturating_sub(observed_at) > CLAUDE_CACHE_MAX_AGE.as_secs() as i64
+        || now.saturating_sub(observed_at) > CLAUDE_RATE_LIMIT_MAX_AGE.as_secs() as i64
     {
         return None;
     }
@@ -412,6 +430,27 @@ mod tests {
         assert_eq!(
             metric.history[MAX_HISTORY_POINTS - 1].timestamp_unix_seconds,
             1_139
+        );
+    }
+
+    #[test]
+    fn claude_history_tolerates_missed_poll_but_not_stale_data() {
+        let metric = normalized_metric(
+            vec![Sample {
+                timestamp: 1_000,
+                used: 42.0,
+                reset_at: 0,
+            }],
+            Duration::from_secs(5 * 60 * 60),
+        );
+
+        assert_eq!(
+            metric_if_recent(metric, 1_000 + 45 * 60, CLAUDE_HISTORY_MAX_AGE).available,
+            1
+        );
+        assert_eq!(
+            metric_if_recent(metric, 1_000 + 60 * 60 + 1, CLAUDE_HISTORY_MAX_AGE).available,
+            0
         );
     }
 
