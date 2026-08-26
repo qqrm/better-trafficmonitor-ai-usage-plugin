@@ -2,18 +2,18 @@
 
 A native [TrafficMonitor](https://github.com/zhongyang219/TrafficMonitor) plug-in that displays local Claude and Codex usage history directly in the taskbar widget.
 
-It reads data already stored by the desktop clients on the same Windows machine. It does not open a browser, request a web-session token, start a helper process, or make network requests.
+It reads Claude data already stored by the desktop client on the same Windows machine. For Codex, it starts the installed Codex app-server to read the current authenticated account limits and falls back to the latest fresh local session record when the app-server is unavailable. It does not open a browser or extract a web-session token.
 
 ![Claude and Codex usage graphs in the TrafficMonitor taskbar widget](docs/images/taskbar-preview.png)
 
 ## Display items
 
 - `Claude Usage`: Claude five-hour and seven-day burn-down history in one compact row.
-- `Codex Usage`: Codex seven-day burn-down history.
+- `Codex Usage`: Codex seven-day burn-down history, percentage, and time remaining until reset (`d`, then `h`, then `m`; seconds are omitted).
 
 The graph can display either remaining capacity (100% to 0%) or used capacity (0% to 100%). Claude can be monochrome, adaptive, or always colored. A single item in a tall taskbar cell can be centered, placed at the top or bottom, or stretched.
 
-Hovering over the widget shows each window's used and remaining percentage. It also shows the next reset time that Claude Desktop or Codex has recently persisted locally. The Claude reset is shown as a provider-wide `next reset` because the local record does not identify which displayed window it belongs to.
+Hovering over the widget shows each window's used and remaining percentage. It also shows the next reset time reported by Claude Desktop or Codex. The Claude reset is shown as a provider-wide `next reset` because the local record does not identify which displayed window it belongs to.
 
 ## Install
 

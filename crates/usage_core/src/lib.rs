@@ -7,11 +7,21 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
+#[cfg(windows)]
+use std::io::{BufRead, BufReader, Write};
+#[cfg(windows)]
+use std::process::{Command, Stdio};
+#[cfg(windows)]
+use std::sync::mpsc;
+#[cfg(windows)]
+use std::thread;
+
 pub const MAX_HISTORY_POINTS: usize = 128;
 // Claude Desktop normally appends usage samples every 15 minutes, but may skip
 // individual polls. Do not hide both Claude windows after one missed update.
 const CLAUDE_HISTORY_MAX_AGE: Duration = Duration::from_secs(60 * 60);
 const CLAUDE_RATE_LIMIT_MAX_AGE: Duration = Duration::from_secs(20 * 60);
+const CODEX_RATE_LIMIT_MAX_AGE: Duration = Duration::from_secs(20 * 60);
 const CODEX_HISTORY_WINDOW: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const MAX_CODEX_FILES: usize = 24;
 const MAX_CODEX_DIRECTORY_ENTRIES: usize = 4096;
@@ -66,6 +76,13 @@ struct Sample {
     timestamp: i64,
     used: f64,
     reset_at: i64,
+}
+
+fn unix_now() -> i64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or_default()
 }
 
 fn normalized_metric(mut samples: Vec<Sample>, window: Duration) -> UsageCoreMetric {
@@ -171,10 +188,7 @@ fn load_claude() -> (UsageCoreMetric, UsageCoreMetric) {
             });
         }
     }
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as i64)
-        .unwrap_or_default();
+    let now = unix_now();
     (
         metric_if_recent(
             normalized_metric(five_hour, Duration::from_secs(5 * 60 * 60)),
@@ -232,10 +246,7 @@ fn load_claude_next_reset(claude_data_dir: &Path) -> i64 {
     files.reverse();
     files.truncate(MAX_CLAUDE_LOCAL_STORAGE_FILES);
 
-    let now = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as i64)
-        .unwrap_or_default();
+    let now = unix_now();
     let mut newest = None;
     for path in files {
         let Ok(data) = fs::read(&path) else {
@@ -312,12 +323,16 @@ fn extract_weekly(rate_limits: &Value, timestamp: i64) -> Option<Sample> {
         let Some(metric) = rate_limits.get(key) else {
             continue;
         };
-        let minutes = metric.get("window_minutes").and_then(Value::as_i64)?;
+        let minutes = metric
+            .get("window_minutes")
+            .or_else(|| metric.get("windowDurationMins"))
+            .and_then(Value::as_i64)?;
         if !(6 * 24 * 60..=8 * 24 * 60).contains(&minutes) {
             continue;
         }
         let used = metric
             .get("used_percent")
+            .or_else(|| metric.get("usedPercent"))
             .and_then(Value::as_f64)
             .or_else(|| {
                 metric
@@ -328,7 +343,13 @@ fn extract_weekly(rate_limits: &Value, timestamp: i64) -> Option<Sample> {
         return Some(Sample {
             timestamp,
             used,
-            reset_at: parse_rfc3339_seconds(metric.get("reset_at")),
+            // Codex persists this as a Unix timestamp named `resets_at`.
+            // Retain `reset_at` as a compatibility fallback for older records.
+            reset_at: metric
+                .get("resets_at")
+                .or_else(|| metric.get("resetsAt"))
+                .and_then(Value::as_i64)
+                .unwrap_or_else(|| parse_rfc3339_seconds(metric.get("reset_at"))),
         });
     }
     None
@@ -346,7 +367,15 @@ fn read_file_tail(path: &Path) -> Option<String> {
     Some(data)
 }
 
-fn load_codex() -> UsageCoreMetric {
+fn codex_metric_from_samples(samples: Vec<Sample>, now: i64) -> UsageCoreMetric {
+    metric_if_recent(
+        normalized_metric(samples, CODEX_HISTORY_WINDOW),
+        now,
+        CODEX_RATE_LIMIT_MAX_AGE,
+    )
+}
+
+fn load_codex_history() -> UsageCoreMetric {
     let Some(sessions) = codex_home().map(|home| home.join("sessions")) else {
         return UsageCoreMetric::default();
     };
@@ -379,11 +408,128 @@ fn load_codex() -> UsageCoreMetric {
             }
         }
     }
-    normalized_metric(samples, CODEX_HISTORY_WINDOW)
+    codex_metric_from_samples(samples, unix_now())
 }
 
-/// Writes a fixed-size snapshot into caller-owned memory. The function performs
-/// only local file reads and never starts a process or makes a network request.
+#[cfg(windows)]
+fn newest_codex_executable() -> Option<PathBuf> {
+    let root = PathBuf::from(env::var_os("LOCALAPPDATA")?).join("OpenAI/Codex/bin");
+    fs::read_dir(root)
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path().join("codex.exe"))
+        .filter(|path| path.is_file())
+        .max_by_key(|path| {
+            fs::metadata(path)
+                .and_then(|metadata| metadata.modified())
+                .ok()
+        })
+}
+
+#[cfg(windows)]
+fn request_codex_rate_limits(executable: PathBuf) -> Option<Value> {
+    use std::os::windows::process::CommandExt;
+
+    let mut command = Command::new(executable);
+    command
+        .args(["app-server", "--stdio"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        // Prevent a console window when TrafficMonitor refreshes the plug-in.
+        .creation_flags(0x0800_0000);
+    let mut child = command.spawn().ok()?;
+    let Some(mut stdin) = child.stdin.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
+    };
+    let Some(stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
+    };
+    let mut write_succeeded = true;
+    for request in [
+        serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "clientInfo": { "name": "better-trafficmonitor-ai-usage-plugin", "version": env!("CARGO_PKG_VERSION") },
+                "capabilities": {}
+            }
+        }),
+        serde_json::json!({ "jsonrpc": "2.0", "id": 2, "method": "account/rateLimits/read", "params": null }),
+    ] {
+        if writeln!(stdin, "{request}").is_err() {
+            write_succeeded = false;
+            break;
+        }
+    }
+    if write_succeeded {
+        write_succeeded = stdin.flush().is_ok();
+    }
+    if !write_succeeded {
+        let _ = child.kill();
+        let _ = child.wait();
+        return None;
+    }
+
+    let (sender, receiver) = mpsc::sync_channel(1);
+    thread::spawn(move || {
+        let mut response = None;
+        for line in BufReader::new(stdout).lines().take(64) {
+            let Ok(line) = line else { break };
+            let Ok(message) = serde_json::from_str::<Value>(&line) else {
+                continue;
+            };
+            if message.get("id").and_then(Value::as_i64) == Some(2) {
+                response = message.get("result").cloned();
+                break;
+            }
+        }
+        let _ = sender.send(response);
+    });
+    let response = receiver.recv_timeout(Duration::from_secs(3)).ok().flatten();
+    let _ = child.kill();
+    let _ = child.wait();
+    response
+}
+
+#[cfg(windows)]
+fn load_codex_live() -> UsageCoreMetric {
+    let Some(executable) = newest_codex_executable() else {
+        return UsageCoreMetric::default();
+    };
+    let Some(response) = request_codex_rate_limits(executable) else {
+        return UsageCoreMetric::default();
+    };
+    let rate_limits = response
+        .get("rateLimitsByLimitId")
+        .and_then(|limits| limits.get("codex"))
+        .or_else(|| response.get("rateLimits"));
+    let Some(sample) = rate_limits.and_then(|limits| extract_weekly(limits, unix_now())) else {
+        return UsageCoreMetric::default();
+    };
+    normalized_metric(vec![sample], CODEX_HISTORY_WINDOW)
+}
+
+fn load_codex() -> UsageCoreMetric {
+    #[cfg(windows)]
+    {
+        let live = load_codex_live();
+        if live.available != 0 {
+            return live;
+        }
+    }
+    load_codex_history()
+}
+
+/// Writes a fixed-size snapshot into caller-owned memory. Claude is read from
+/// local application data. On Windows, Codex first asks the installed Codex
+/// app-server for an authenticated live snapshot; its fresh local JSONL data is
+/// used only if that request is unavailable.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn usage_core_refresh(out: *mut UsageCoreSnapshot) -> i32 {
     if out.is_null() {
@@ -455,6 +601,47 @@ mod tests {
     }
 
     #[test]
+    fn codex_uses_only_the_latest_fresh_rate_limit_update() {
+        let now = 2_000_000;
+        let metric = codex_metric_from_samples(
+            vec![
+                Sample {
+                    timestamp: now - 25 * 60,
+                    used: 96.0,
+                    reset_at: now + 74 * 24 * 60 * 60,
+                },
+                Sample {
+                    timestamp: now - 5 * 60,
+                    used: 18.0,
+                    reset_at: now + 6 * 24 * 60 * 60,
+                },
+            ],
+            now,
+        );
+
+        assert_eq!(metric.available, 1);
+        assert_eq!(metric.used_percentage, 18.0);
+        assert_eq!(metric.reset_at_unix_seconds, now + 6 * 24 * 60 * 60);
+    }
+
+    #[test]
+    fn codex_hides_rate_limit_after_no_recent_update() {
+        let now = 2_000_000;
+        let metric = codex_metric_from_samples(
+            vec![Sample {
+                timestamp: now - CODEX_RATE_LIMIT_MAX_AGE.as_secs() as i64 - 1,
+                used: 96.0,
+                reset_at: now + 74 * 24 * 60 * 60,
+            }],
+            now,
+        );
+
+        assert_eq!(metric.available, 0);
+        assert_eq!(metric.history_len, 0);
+        assert_eq!(metric.reset_at_unix_seconds, 0);
+    }
+
+    #[test]
     fn weekly_rate_limit_can_come_from_secondary_only() {
         let limits = json!({
             "secondary": {
@@ -469,6 +656,37 @@ mod tests {
         assert_eq!(sample.timestamp, 123);
         assert_eq!(sample.used, 63.0);
         assert!(sample.reset_at > 0);
+    }
+
+    #[test]
+    fn weekly_rate_limit_reads_codex_unix_reset_timestamp() {
+        let limits = json!({
+            "primary": {
+                "window_minutes": 10_080,
+                "used_percent": 15.0,
+                "resets_at": 1_788_272_240_i64
+            }
+        });
+
+        let sample = extract_weekly(&limits, 123).expect("weekly metric");
+
+        assert_eq!(sample.reset_at, 1_788_272_240);
+    }
+
+    #[test]
+    fn weekly_rate_limit_reads_live_codex_app_server_format() {
+        let limits = json!({
+            "primary": {
+                "windowDurationMins": 10_080,
+                "usedPercent": 18,
+                "resetsAt": 1_788_272_240_i64
+            }
+        });
+
+        let sample = extract_weekly(&limits, 123).expect("weekly metric");
+
+        assert_eq!(sample.used, 18.0);
+        assert_eq!(sample.reset_at, 1_788_272_240);
     }
 
     #[test]

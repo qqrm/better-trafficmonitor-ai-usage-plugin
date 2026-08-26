@@ -42,6 +42,7 @@ enum class ColorMode
 std::atomic<GraphDisplayMode> g_graph_display_mode{ GraphDisplayMode::Remaining };
 std::atomic<SingleItemLayout> g_single_item_layout{ SingleItemLayout::Center };
 std::atomic<ColorMode> g_color_mode{ ColorMode::Adaptive };
+std::atomic_bool g_claude_weekly_first{ true };
 
 constexpr int SINGLE_ITEM_HEIGHT_THRESHOLD = 24;
 
@@ -122,6 +123,26 @@ std::wstring FormatResetTime(long long reset_at_unix_seconds)
 
     const CTime reset_at(static_cast<__time64_t>(reset_at_unix_seconds));
     return std::wstring(reset_at.Format(L"%Y-%m-%d %H:%M local"));
+}
+
+std::wstring FormatTimeUntilReset(long long reset_at_unix_seconds)
+{
+    if (reset_at_unix_seconds <= 0)
+        return L"--";
+
+    const long long now = static_cast<long long>(CTime::GetCurrentTime().GetTime());
+    const long long remaining_seconds = reset_at_unix_seconds - now;
+    if (remaining_seconds <= 0)
+        return L"0m";
+
+    constexpr long long minute = 60LL;
+    constexpr long long hour = 60LL * minute;
+    constexpr long long day = 24LL * hour;
+    if (remaining_seconds >= day)
+        return std::to_wstring(remaining_seconds / day) + L"d";
+    if (remaining_seconds >= hour)
+        return std::to_wstring(remaining_seconds / hour) + L"h";
+    return std::to_wstring(remaining_seconds / minute) + L"m";
 }
 
 std::wstring FormatLimitDetails(const UsageMetric& metric)
@@ -535,19 +556,25 @@ void DrawClaudeOverview(CDC* pDC, int x, int y, int w, int h, bool dark_mode)
     DrawUsageHistoryLane(pDC, lane_rect, style, L"", five_hour.available, five_hour_history,
         5LL * 60LL * 60LL, five_hour_color);
 
-    const std::wstring five_hour_text = FormatDisplayedPercentage(five_hour.available, five_hour.percentage);
     const std::wstring seven_day_text = FormatDisplayedPercentage(seven_day.available, seven_day.percentage);
+    const std::wstring five_hour_text = FormatDisplayedPercentage(five_hour.available, five_hour.percentage);
+    const bool weekly_first = g_claude_weekly_first.load(std::memory_order_relaxed);
+    const std::wstring& first_text = weekly_first ? seven_day_text : five_hour_text;
+    const std::wstring& second_text = weekly_first ? five_hour_text : seven_day_text;
+    const bool first_available = weekly_first ? seven_day.available : five_hour.available;
+    const bool second_available = weekly_first ? five_hour.available : seven_day.available;
+    const COLORREF first_color = weekly_first ? seven_day_text_color : five_hour_color;
+    const COLORREF second_color = weekly_first ? five_hour_color : seven_day_text_color;
     const int old_bk_mode = pDC->SetBkMode(TRANSPARENT);
     CRect text_rect(lane_rect.left + 3, lane_rect.top, lane_rect.right - 3, lane_rect.bottom);
-    COLORREF old_text_color = pDC->SetTextColor(five_hour.available ? five_hour_color : style.unavailable_text);
-    pDC->DrawTextW(five_hour_text.c_str(), -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-    const int five_hour_width = MeasureTextWidth(pDC, five_hour_text.c_str());
-    text_rect.left += five_hour_width + 3;
+    COLORREF old_text_color = pDC->SetTextColor(first_available ? first_color : style.unavailable_text);
+    pDC->DrawTextW(first_text.c_str(), -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    text_rect.left += MeasureTextWidth(pDC, first_text.c_str()) + 3;
     pDC->SetTextColor(style.text_on_track);
     pDC->DrawTextW(L"/", -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     text_rect.left += MeasureTextWidth(pDC, L"/") + 3;
-    pDC->SetTextColor(seven_day.available ? seven_day_text_color : style.unavailable_text);
-    pDC->DrawTextW(seven_day_text.c_str(), -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    pDC->SetTextColor(second_available ? second_color : style.unavailable_text);
+    pDC->DrawTextW(second_text.c_str(), -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     pDC->SetTextColor(old_text_color);
     pDC->SetBkMode(old_bk_mode);
 }
@@ -570,8 +597,10 @@ void DrawCodexOverview(CDC* pDC, int x, int y, int w, int h, bool dark_mode)
     for (const auto& point : g_usage_core.GetHistory(UsageWindow::Codex7d))
         history.push_back({ point.timestamp_unix_seconds, point.percentage });
     const UsageMetric metric = g_usage_core.GetMetric(UsageWindow::Codex7d);
+    const std::wstring display_text = FormatDisplayedPercentage(metric.available, metric.percentage)
+        + L" / " + FormatTimeUntilReset(metric.reset_at_unix_seconds);
     const CRect lane_rect(item_rect.left + icon_size + 4, item_rect.top, item_rect.right, item_rect.bottom);
-    DrawUsageHistoryLane(pDC, lane_rect, style, FormatDisplayedPercentage(metric.available, metric.percentage),
+    DrawUsageHistoryLane(pDC, lane_rect, style, display_text,
         metric.available, history, 7LL * 24LL * 60LL * 60LL, style.fill);
 }
 
@@ -630,11 +659,16 @@ const wchar_t* CClaudeUsageItem::GetItemLableText() const
 
 const wchar_t* CClaudeUsageItem::GetItemValueText() const
 {
-    const UsageMetric five_hour = g_usage_core.GetMetric(UsageWindow::Claude5h);
     const UsageMetric seven_day = g_usage_core.GetMetric(UsageWindow::Claude7d);
-    m_value_text_cache = FormatDisplayedPercentage(five_hour.available, five_hour.percentage);
+    const UsageMetric five_hour = g_usage_core.GetMetric(UsageWindow::Claude5h);
+    const bool weekly_first = g_claude_weekly_first.load(std::memory_order_relaxed);
+    m_value_text_cache = FormatDisplayedPercentage(
+        weekly_first ? seven_day.available : five_hour.available,
+        weekly_first ? seven_day.percentage : five_hour.percentage);
     m_value_text_cache += L" / ";
-    m_value_text_cache += FormatDisplayedPercentage(seven_day.available, seven_day.percentage);
+    m_value_text_cache += FormatDisplayedPercentage(
+        weekly_first ? five_hour.available : seven_day.available,
+        weekly_first ? five_hour.percentage : seven_day.percentage);
     return m_value_text_cache.c_str();
 }
 
@@ -695,12 +729,14 @@ const wchar_t* CCodexUsageItem::GetItemValueText() const
 {
     const UsageMetric metric = g_usage_core.GetMetric(UsageWindow::Codex7d);
     m_value_text_cache = FormatDisplayedPercentage(metric.available, metric.percentage);
+    m_value_text_cache += L" / ";
+    m_value_text_cache += FormatTimeUntilReset(metric.reset_at_unix_seconds);
     return m_value_text_cache.c_str();
 }
 
 const wchar_t* CCodexUsageItem::GetItemValueSampleText() const
 {
-    return L"99.9%";
+    return L"99.9% / 7d";
 }
 
 bool CCodexUsageItem::IsCustomDraw() const
@@ -763,9 +799,11 @@ void CBetterTrafficMonitorAiUsagePlugin::OnInitialize(ITrafficMonitor* pApp)
     const int mode = GetPrivateProfileIntW(L"Display", L"Mode", 0, m_config_path.c_str());
     const int layout = GetPrivateProfileIntW(L"Display", L"SingleItemLayout", 0, m_config_path.c_str());
     const int color = GetPrivateProfileIntW(L"Display", L"ColorMode", 1, m_config_path.c_str());
+    const int claude_weekly_first = GetPrivateProfileIntW(L"Display", L"ClaudeWeeklyFirst", 1, m_config_path.c_str());
     g_graph_display_mode.store(mode == 1 ? GraphDisplayMode::Used : GraphDisplayMode::Remaining, std::memory_order_relaxed);
     g_single_item_layout.store(layout >= 0 && layout <= 3 ? static_cast<SingleItemLayout>(layout) : SingleItemLayout::Center, std::memory_order_relaxed);
     g_color_mode.store(color >= 0 && color <= 2 ? static_cast<ColorMode>(color) : ColorMode::Adaptive, std::memory_order_relaxed);
+    g_claude_weekly_first.store(claude_weekly_first != 0, std::memory_order_relaxed);
 }
 
 void CBetterTrafficMonitorAiUsagePlugin::DataRequired()
@@ -782,10 +820,12 @@ ITMPlugin::OptionReturn CBetterTrafficMonitorAiUsagePlugin::ShowOptionsDialog(vo
     const GraphDisplayMode current_graph = g_graph_display_mode.load(std::memory_order_relaxed);
     const SingleItemLayout current_layout = g_single_item_layout.load(std::memory_order_relaxed);
     const ColorMode current_color = g_color_mode.load(std::memory_order_relaxed);
+    const bool current_claude_weekly_first = g_claude_weekly_first.load(std::memory_order_relaxed);
     CDisplayOptionsDialog dialog(
         static_cast<int>(current_graph),
         static_cast<int>(current_layout),
         static_cast<int>(current_color),
+        current_claude_weekly_first,
         CWnd::FromHandle(static_cast<HWND>(hParent)));
     if (dialog.DoModal() != IDOK)
         return OR_OPTION_UNCHANGED;
@@ -793,17 +833,21 @@ ITMPlugin::OptionReturn CBetterTrafficMonitorAiUsagePlugin::ShowOptionsDialog(vo
     const GraphDisplayMode chosen_graph = static_cast<GraphDisplayMode>(dialog.GraphMode());
     const SingleItemLayout chosen_layout = static_cast<SingleItemLayout>(dialog.SingleItemLayout());
     const ColorMode chosen_color = static_cast<ColorMode>(dialog.ColorMode());
-    if (chosen_graph == current_graph && chosen_layout == current_layout && chosen_color == current_color)
+    const bool chosen_claude_weekly_first = dialog.ClaudeWeeklyFirst();
+    if (chosen_graph == current_graph && chosen_layout == current_layout && chosen_color == current_color
+        && chosen_claude_weekly_first == current_claude_weekly_first)
         return OR_OPTION_UNCHANGED;
 
     g_graph_display_mode.store(chosen_graph, std::memory_order_relaxed);
     g_single_item_layout.store(chosen_layout, std::memory_order_relaxed);
     g_color_mode.store(chosen_color, std::memory_order_relaxed);
+    g_claude_weekly_first.store(chosen_claude_weekly_first, std::memory_order_relaxed);
     if (!m_config_path.empty())
     {
         WritePrivateProfileStringW(L"Display", L"Mode", chosen_graph == GraphDisplayMode::Used ? L"1" : L"0", m_config_path.c_str());
         WritePrivateProfileStringW(L"Display", L"SingleItemLayout", std::to_wstring(dialog.SingleItemLayout()).c_str(), m_config_path.c_str());
         WritePrivateProfileStringW(L"Display", L"ColorMode", std::to_wstring(dialog.ColorMode()).c_str(), m_config_path.c_str());
+        WritePrivateProfileStringW(L"Display", L"ClaudeWeeklyFirst", chosen_claude_weekly_first ? L"1" : L"0", m_config_path.c_str());
     }
     return OR_OPTION_CHANGED;
 }
@@ -826,7 +870,7 @@ const wchar_t* CBetterTrafficMonitorAiUsagePlugin::GetInfo(PluginInfoIndex index
         value = L"Copyright (C) 2026 Better TrafficMonitor AI Usage contributors";
         break;
     case TMI_VERSION:
-        value = L"1.1.1";
+        value = L"1.2.0";
         break;
     case TMI_URL:
         value = L"https://github.com/qqrm/better-trafficmonitor-ai-usage-plugin";
@@ -845,8 +889,16 @@ const wchar_t* CBetterTrafficMonitorAiUsagePlugin::GetTooltipInfo()
     const UsageMetric claude_five_hour = g_usage_core.GetMetric(UsageWindow::Claude5h);
     const UsageMetric claude_seven_day = g_usage_core.GetMetric(UsageWindow::Claude7d);
     const UsageMetric codex_seven_day = g_usage_core.GetMetric(UsageWindow::Codex7d);
-    m_tooltip_text_cache = L"Claude 5h: " + FormatLimitDetails(claude_five_hour);
-    m_tooltip_text_cache += L"\nClaude 7d: " + FormatLimitDetails(claude_seven_day);
+    if (g_claude_weekly_first.load(std::memory_order_relaxed))
+    {
+        m_tooltip_text_cache = L"Claude 7d: " + FormatLimitDetails(claude_seven_day);
+        m_tooltip_text_cache += L"\nClaude 5h: " + FormatLimitDetails(claude_five_hour);
+    }
+    else
+    {
+        m_tooltip_text_cache = L"Claude 5h: " + FormatLimitDetails(claude_five_hour);
+        m_tooltip_text_cache += L"\nClaude 7d: " + FormatLimitDetails(claude_seven_day);
+    }
     m_tooltip_text_cache += L"\nClaude next reset: " + FormatResetTime(g_usage_core.GetClaudeNextResetAtUnixSeconds());
     m_tooltip_text_cache += L"\n\nCodex 7d: " + FormatLimitDetails(codex_seven_day) + L"; resets: " + FormatResetTime(codex_seven_day.reset_at_unix_seconds);
     return m_tooltip_text_cache.c_str();

@@ -2,8 +2,8 @@
 #include <windows.h>
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,1,1,0
- PRODUCTVERSION 1,1,1,0
+ FILEVERSION 1,2,0,0
+ PRODUCTVERSION 1,2,0,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -20,12 +20,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "QQRM\0"
             VALUE "FileDescription", "Better TrafficMonitor AI Usage\0"
-            VALUE "FileVersion", "1.1.1\0"
+            VALUE "FileVersion", "1.2.0\0"
             VALUE "InternalName", "BetterTrafficMonitorAiUsage\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 QQRM\0"
             VALUE "OriginalFilename", "BetterTrafficMonitorAiUsage.dll\0"
             VALUE "ProductName", "Better TrafficMonitor AI Usage\0"
-            VALUE "ProductVersion", "1.1.1\0"
+            VALUE "ProductVersion", "1.2.0\0"
         END
     END
     BLOCK "VarFileInfo"
@@ -34,7 +34,7 @@ BEGIN
     END
 END
 
-IDD_DISPLAY_OPTIONS DIALOGEX 0, 0, 274, 226
+IDD_DISPLAY_OPTIONS DIALOGEX 0, 0, 274, 250
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Better TrafficMonitor AI Usage"
 FONT 9, "Segoe UI"
@@ -56,6 +56,8 @@ BEGIN
     CONTROL         "Always colored", IDC_COLOR_ALWAYS, "Button", BS_AUTORADIOBUTTON, 138, 159, 105, 12
     LTEXT           "Adaptive: colored with two rows, monochrome when alone.", -1, 138, 175, 118, 17
 
-    DEFPUSHBUTTON   "OK", IDOK, 162, 204, 50, 14
-    PUSHBUTTON      "Cancel", IDCANCEL, 216, 204, 50, 14
+    CONTROL         "Weekly limit first (7d / 5h)", IDC_CLAUDE_WEEKLY_FIRST, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 18, 204, 230, 12
+
+    DEFPUSHBUTTON   "OK", IDOK, 162, 228, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 216, 228, 50, 14
 END

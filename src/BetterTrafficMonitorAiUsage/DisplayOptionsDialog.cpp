@@ -1,11 +1,12 @@
 #include "pch.h"
 #include "DisplayOptionsDialog.h"
 
-CDisplayOptionsDialog::CDisplayOptionsDialog(int graph_mode, int single_item_layout, int color_mode, CWnd* parent)
+CDisplayOptionsDialog::CDisplayOptionsDialog(int graph_mode, int single_item_layout, int color_mode, bool claude_weekly_first, CWnd* parent)
     : CDialogEx(IDD_DISPLAY_OPTIONS, parent)
     , m_graph_mode(graph_mode)
     , m_single_item_layout(single_item_layout)
     , m_color_mode(color_mode)
+    , m_claude_weekly_first(claude_weekly_first)
 {
 }
 
@@ -15,6 +16,7 @@ BOOL CDisplayOptionsDialog::OnInitDialog()
     CheckRadioButton(IDC_GRAPH_REMAINING, IDC_GRAPH_USED, IDC_GRAPH_REMAINING + m_graph_mode);
     CheckRadioButton(IDC_LAYOUT_CENTER, IDC_LAYOUT_STRETCH, IDC_LAYOUT_CENTER + m_single_item_layout);
     CheckRadioButton(IDC_COLOR_MONOCHROME, IDC_COLOR_ALWAYS, IDC_COLOR_MONOCHROME + m_color_mode);
+    CheckDlgButton(IDC_CLAUDE_WEEKLY_FIRST, m_claude_weekly_first ? BST_CHECKED : BST_UNCHECKED);
     return TRUE;
 }
 
@@ -37,6 +39,8 @@ void CDisplayOptionsDialog::OnOK()
         m_color_mode = 2;
     else
         m_color_mode = 1;
+
+    m_claude_weekly_first = IsDlgButtonChecked(IDC_CLAUDE_WEEKLY_FIRST) == BST_CHECKED;
 
     CDialogEx::OnOK();
 }

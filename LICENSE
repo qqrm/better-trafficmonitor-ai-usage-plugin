@@ -2,6 +2,10 @@ MIT License
 
 Copyright (c) 2026 QQRM
 
+Except for the third-party material identified in `THIRD_PARTY_NOTICES.md`,
+this license applies to all original source code and documentation authored for
+this repository.
+
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
 in the Software without restriction, including without limitation the rights
