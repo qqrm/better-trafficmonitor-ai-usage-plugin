@@ -2,7 +2,7 @@
 
 A native [TrafficMonitor](https://github.com/zhongyang219/TrafficMonitor) plug-in that displays local Claude and Codex usage history directly in the taskbar widget.
 
-It reads Claude data already stored by the desktop client on the same Windows machine. For Codex, it starts the installed Codex app-server to read the current authenticated account limits and falls back to the latest fresh local session record when the app-server is unavailable. It does not open a browser or extract a web-session token.
+It reads Claude data already stored by the desktop client on the same Windows machine. For Codex, it uses local session records and its own seven-day local sample store for the graph, then starts the installed Codex app-server for the current authenticated account limits; each live point is appended to that store. It falls back to the latest fresh local sample when the app-server is unavailable. It does not open a browser or extract a web-session token.
 
 ![Claude and Codex usage graphs in the TrafficMonitor taskbar widget](docs/images/taskbar-preview.png)
 
@@ -38,7 +38,7 @@ The plug-in currently ships for x64 TrafficMonitor. The DLL architecture must ma
 - Claude Desktop: `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\plan-usage-history.json`
 - Codex: `%CODEX_HOME%\sessions\**\*.jsonl`, or `%USERPROFILE%\.codex\sessions\**\*.jsonl` when `CODEX_HOME` is unset
 
-Data is refreshed at most once every 30 seconds. Claude usage history is treated as unavailable after one hour; Claude Desktop normally samples it every 15 minutes but can skip individual polls. Codex history is bounded to the newest 24 session files, 2 MiB per file, and seven days of samples.
+Data is refreshed at most once every 30 seconds. Claude usage history is treated as unavailable after one hour; Claude Desktop normally samples it every 15 minutes but can skip individual polls. Codex seeds its graph from the newest 24 session files (2 MiB per file) and then keeps a compact seven-day local sample history under `%LOCALAPPDATA%\\BetterTrafficMonitorAiUsage\\codex-history.json`.
 
 ## Build
 
@@ -57,7 +57,7 @@ The installable ZIP and SHA-256 checksum are written to `dist\`.
 
 ## Privacy
 
-The usage core only performs bounded local file reads. It does not authenticate to Claude or Codex, transmit credentials, invoke subprocesses, or access the network.
+The usage core only performs bounded local file reads and starts the installed Codex app-server to query the already authenticated local client. It does not transmit credentials, invoke a browser, or access the network itself.
 
 ## Author
 

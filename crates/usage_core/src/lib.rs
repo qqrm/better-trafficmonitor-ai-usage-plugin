@@ -23,6 +23,7 @@ const CLAUDE_HISTORY_MAX_AGE: Duration = Duration::from_secs(60 * 60);
 const CLAUDE_RATE_LIMIT_MAX_AGE: Duration = Duration::from_secs(20 * 60);
 const CODEX_RATE_LIMIT_MAX_AGE: Duration = Duration::from_secs(20 * 60);
 const CODEX_HISTORY_WINDOW: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+const MAX_PERSISTED_CODEX_HISTORY_POINTS: usize = 1024;
 const MAX_CODEX_FILES: usize = 24;
 const MAX_CODEX_DIRECTORY_ENTRIES: usize = 4096;
 const MAX_CODEX_FILE_TAIL_BYTES: u64 = 2 * 1024 * 1024;
@@ -85,18 +86,37 @@ fn unix_now() -> i64 {
         .unwrap_or_default()
 }
 
-fn normalized_metric(mut samples: Vec<Sample>, window: Duration) -> UsageCoreMetric {
+fn normalized_samples(
+    mut samples: Vec<Sample>,
+    window: Duration,
+    max_points: usize,
+) -> Vec<Sample> {
     samples.retain(|sample| sample.used.is_finite() && (0.0..=100.0).contains(&sample.used));
     samples.sort_by_key(|sample| sample.timestamp);
     samples.dedup_by_key(|sample| sample.timestamp);
-    let Some(latest) = samples.last().copied() else {
-        return UsageCoreMetric::default();
+    let Some(latest) = samples.last() else {
+        return Vec::new();
     };
     let oldest = latest.timestamp.saturating_sub(window.as_secs() as i64);
     samples.retain(|sample| sample.timestamp >= oldest);
-    if samples.len() > MAX_HISTORY_POINTS {
-        samples.drain(0..samples.len() - MAX_HISTORY_POINTS);
+    if samples.len() <= max_points || max_points <= 1 {
+        return samples;
     }
+
+    // Keep the full time window represented. Dropping the oldest points makes
+    // a continuously refreshed graph silently shrink from seven days to a few
+    // recent hours.
+    let last_index = samples.len() - 1;
+    (0..max_points)
+        .map(|index| samples[index * last_index / (max_points - 1)])
+        .collect()
+}
+
+fn normalized_metric(samples: Vec<Sample>, window: Duration) -> UsageCoreMetric {
+    let samples = normalized_samples(samples, window, MAX_HISTORY_POINTS);
+    let Some(latest) = samples.last().copied() else {
+        return UsageCoreMetric::default();
+    };
 
     let mut metric = UsageCoreMetric {
         available: 1,
@@ -375,9 +395,82 @@ fn codex_metric_from_samples(samples: Vec<Sample>, now: i64) -> UsageCoreMetric 
     )
 }
 
-fn load_codex_history() -> UsageCoreMetric {
+fn parse_persisted_codex_history(data: &str) -> Vec<Sample> {
+    let Ok(root) = serde_json::from_str::<Value>(data) else {
+        return Vec::new();
+    };
+    root.get("samples")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|sample| {
+            Some(Sample {
+                timestamp: sample.get("timestamp")?.as_i64()?,
+                used: sample.get("used")?.as_f64()?,
+                reset_at: sample.get("reset_at")?.as_i64()?,
+            })
+        })
+        .collect()
+}
+
+fn persisted_codex_history_json(samples: &[Sample]) -> String {
+    let samples: Vec<Value> = samples
+        .iter()
+        .map(|sample| {
+            serde_json::json!({
+                "timestamp": sample.timestamp,
+                "used": sample.used,
+                "reset_at": sample.reset_at,
+            })
+        })
+        .collect();
+    serde_json::json!({ "version": 1, "samples": samples }).to_string()
+}
+
+#[cfg(windows)]
+fn persisted_codex_history_path() -> Option<PathBuf> {
+    Some(
+        PathBuf::from(env::var_os("LOCALAPPDATA")?)
+            .join("BetterTrafficMonitorAiUsage")
+            .join("codex-history.json"),
+    )
+}
+
+#[cfg(windows)]
+fn load_persisted_codex_history() -> Vec<Sample> {
+    let Some(path) = persisted_codex_history_path() else {
+        return Vec::new();
+    };
+    fs::read_to_string(path)
+        .ok()
+        .map(|data| parse_persisted_codex_history(&data))
+        .unwrap_or_default()
+}
+
+#[cfg(windows)]
+fn save_persisted_codex_history(samples: &[Sample]) {
+    let Some(path) = persisted_codex_history_path() else {
+        return;
+    };
+    let Some(parent) = path.parent() else {
+        return;
+    };
+    if fs::create_dir_all(parent).is_err() {
+        return;
+    }
+    let temporary = path.with_extension("json.tmp");
+    if fs::write(&temporary, persisted_codex_history_json(samples)).is_err() {
+        return;
+    }
+    if fs::rename(&temporary, &path).is_err() {
+        let _ = fs::remove_file(&path);
+        let _ = fs::rename(temporary, path);
+    }
+}
+
+fn load_codex_history_samples() -> Vec<Sample> {
     let Some(sessions) = codex_home().map(|home| home.join("sessions")) else {
-        return UsageCoreMetric::default();
+        return Vec::new();
     };
     let mut files = Vec::new();
     collect_jsonl(&sessions, &mut files, &mut 0);
@@ -408,7 +501,31 @@ fn load_codex_history() -> UsageCoreMetric {
             }
         }
     }
-    codex_metric_from_samples(samples, unix_now())
+    samples
+}
+
+fn load_codex_history() -> UsageCoreMetric {
+    #[cfg(windows)]
+    {
+        let mut samples = load_codex_history_samples();
+        samples.extend(load_persisted_codex_history());
+        return codex_metric_from_samples(samples, unix_now());
+    }
+    #[cfg(not(windows))]
+    codex_metric_from_samples(load_codex_history_samples(), unix_now())
+}
+
+fn codex_history_with_live_sample(mut history: Vec<Sample>, live: Sample) -> Vec<Sample> {
+    // Live account data is authoritative for the displayed percentage and
+    // reset. Keep only older session samples so it is necessarily the final
+    // point, including when a session event shares its one-second timestamp.
+    history.retain(|sample| sample.timestamp < live.timestamp);
+    history.push(live);
+    normalized_samples(
+        history,
+        CODEX_HISTORY_WINDOW,
+        MAX_PERSISTED_CODEX_HISTORY_POINTS,
+    )
 }
 
 #[cfg(windows)]
@@ -512,7 +629,11 @@ fn load_codex_live() -> UsageCoreMetric {
     let Some(sample) = rate_limits.and_then(|limits| extract_weekly(limits, unix_now())) else {
         return UsageCoreMetric::default();
     };
-    normalized_metric(vec![sample], CODEX_HISTORY_WINDOW)
+    let mut history = load_codex_history_samples();
+    history.extend(load_persisted_codex_history());
+    let history = codex_history_with_live_sample(history, sample);
+    save_persisted_codex_history(&history);
+    normalized_metric(history, CODEX_HISTORY_WINDOW)
 }
 
 fn load_codex() -> UsageCoreMetric {
@@ -572,7 +693,7 @@ mod tests {
         assert_eq!(metric.available, 1);
         assert_eq!(metric.history_len as usize, MAX_HISTORY_POINTS);
         assert_eq!(metric.used_percentage, 69.5);
-        assert_eq!(metric.history[0].timestamp_unix_seconds, 1_012);
+        assert_eq!(metric.history[0].timestamp_unix_seconds, 1_000);
         assert_eq!(
             metric.history[MAX_HISTORY_POINTS - 1].timestamp_unix_seconds,
             1_139
@@ -622,6 +743,87 @@ mod tests {
         assert_eq!(metric.available, 1);
         assert_eq!(metric.used_percentage, 18.0);
         assert_eq!(metric.reset_at_unix_seconds, now + 6 * 24 * 60 * 60);
+    }
+
+    #[test]
+    fn live_codex_sample_keeps_older_session_history_for_the_graph() {
+        let live_timestamp = 2_000_000;
+        let metric = normalized_metric(
+            codex_history_with_live_sample(
+                vec![
+                    Sample {
+                        timestamp: live_timestamp - 2 * 60 * 60,
+                        used: 9.0,
+                        reset_at: live_timestamp + 6 * 24 * 60 * 60,
+                    },
+                    Sample {
+                        timestamp: live_timestamp,
+                        used: 99.0,
+                        reset_at: live_timestamp + 6 * 24 * 60 * 60,
+                    },
+                ],
+                Sample {
+                    timestamp: live_timestamp,
+                    used: 18.0,
+                    reset_at: live_timestamp + 5 * 24 * 60 * 60,
+                },
+            ),
+            CODEX_HISTORY_WINDOW,
+        );
+
+        assert_eq!(metric.available, 1);
+        assert_eq!(metric.history_len, 2);
+        assert_eq!(metric.history[0].used_percentage, 9.0);
+        assert_eq!(metric.history[1].used_percentage, 18.0);
+        assert_eq!(metric.used_percentage, 18.0);
+        assert_eq!(
+            metric.reset_at_unix_seconds,
+            live_timestamp + 5 * 24 * 60 * 60
+        );
+    }
+
+    #[test]
+    fn persisted_codex_history_keeps_a_seven_day_span_when_refreshed_often() {
+        let now = 2_000_000;
+        let samples = (0..20_000)
+            .map(|index| Sample {
+                timestamp: now - CODEX_HISTORY_WINDOW.as_secs() as i64 + index * 30,
+                used: (index % 100) as f64,
+                reset_at: now + 6 * 24 * 60 * 60,
+            })
+            .collect();
+
+        let history = codex_history_with_live_sample(
+            samples,
+            Sample {
+                timestamp: now,
+                used: 18.0,
+                reset_at: now + 5 * 24 * 60 * 60,
+            },
+        );
+
+        assert_eq!(history.len(), MAX_PERSISTED_CODEX_HISTORY_POINTS);
+        assert_eq!(
+            history.first().expect("oldest sample").timestamp,
+            now - CODEX_HISTORY_WINDOW.as_secs() as i64
+        );
+        assert_eq!(history.last().expect("live sample").used, 18.0);
+    }
+
+    #[test]
+    fn persisted_codex_history_round_trips() {
+        let samples = vec![Sample {
+            timestamp: 123,
+            used: 18.0,
+            reset_at: 456,
+        }];
+
+        let parsed = parse_persisted_codex_history(&persisted_codex_history_json(&samples));
+
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].timestamp, 123);
+        assert_eq!(parsed[0].used, 18.0);
+        assert_eq!(parsed[0].reset_at, 456);
     }
 
     #[test]
