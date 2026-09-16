@@ -3,7 +3,7 @@
 
 #include <algorithm>
 
-constexpr unsigned long long REFRESH_INTERVAL_MS = 30ULL * 1000ULL;
+constexpr unsigned long long REFRESH_INTERVAL_MS = 10ULL * 1000ULL;
 
 CUsageCoreAdapter& UsageCoreAdapterInstance()
 {
@@ -31,6 +31,8 @@ const UsageCoreMetric& CUsageCoreAdapter::MetricFor(UsageWindow window) const
     case UsageWindow::Claude5h: return m_snapshot.claude_5h;
     case UsageWindow::Claude7d: return m_snapshot.claude_7d;
     case UsageWindow::Codex7d: return m_snapshot.codex_7d;
+    case UsageWindow::ZCode5h: return m_snapshot.zcode_5h;
+    case UsageWindow::ZCode7d: return m_snapshot.zcode_7d;
     }
     return m_snapshot.codex_7d;
 }
@@ -46,6 +48,36 @@ long long CUsageCoreAdapter::GetClaudeNextResetAtUnixSeconds() const
 {
     std::lock_guard<std::mutex> lock(m_mutex);
     return m_snapshot.claude_next_reset_at_unix_seconds;
+}
+
+long long CUsageCoreAdapter::GetZCodeNextResetAtUnixSeconds() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_snapshot.zcode_next_reset_at_unix_seconds;
+}
+
+long long CUsageCoreAdapter::GetZCodeUsedUnits(UsageWindow window) const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    switch (window)
+    {
+    case UsageWindow::ZCode5h: return m_snapshot.zcode_5h_used_units;
+    case UsageWindow::ZCode7d: return m_snapshot.zcode_7d_used_units;
+    default: break;
+    }
+    return 0;
+}
+
+long long CUsageCoreAdapter::GetZCodeLimitUnits(UsageWindow window) const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    switch (window)
+    {
+    case UsageWindow::ZCode5h: return m_snapshot.zcode_5h_limit_units;
+    case UsageWindow::ZCode7d: return m_snapshot.zcode_7d_limit_units;
+    default: break;
+    }
+    return 0;
 }
 
 std::vector<UsageHistoryPoint> CUsageCoreAdapter::GetHistory(UsageWindow window) const

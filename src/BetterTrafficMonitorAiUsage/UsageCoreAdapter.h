@@ -6,7 +6,7 @@
 #include <string>
 #include <vector>
 
-enum class UsageWindow { Claude5h, Claude7d, Codex7d };
+enum class UsageWindow { Claude5h, Claude7d, Codex7d, ZCode5h, ZCode7d };
 
 struct UsageMetric {
     bool available{};
@@ -24,6 +24,10 @@ public:
     void RefreshIfNeeded();
     UsageMetric GetMetric(UsageWindow window) const;
     long long GetClaudeNextResetAtUnixSeconds() const;
+    long long GetZCodeNextResetAtUnixSeconds() const;
+    // Credit units of the z.ai coding plan from the latest server response.
+    long long GetZCodeUsedUnits(UsageWindow window) const;
+    long long GetZCodeLimitUnits(UsageWindow window) const;
     std::vector<UsageHistoryPoint> GetHistory(UsageWindow window) const;
 private:
     const UsageCoreMetric& MetricFor(UsageWindow window) const;

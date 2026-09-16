@@ -24,6 +24,13 @@ typedef struct UsageCoreSnapshot {
     UsageCoreMetric claude_7d;
     UsageCoreMetric codex_7d;
     int64_t claude_next_reset_at_unix_seconds;
+    UsageCoreMetric zcode_5h;
+    UsageCoreMetric zcode_7d;
+    int64_t zcode_next_reset_at_unix_seconds;
+    int64_t zcode_5h_used_units;
+    int64_t zcode_5h_limit_units;
+    int64_t zcode_7d_used_units;
+    int64_t zcode_7d_limit_units;
 } UsageCoreSnapshot;
 
 #ifdef __cplusplus

@@ -2,8 +2,8 @@
 #include <windows.h>
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,2,1,0
- PRODUCTVERSION 1,2,1,0
+ FILEVERSION 1,6,0,0
+ PRODUCTVERSION 1,6,0,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -20,12 +20,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "QQRM\0"
             VALUE "FileDescription", "Better TrafficMonitor AI Usage\0"
-            VALUE "FileVersion", "1.2.1\0"
+            VALUE "FileVersion", "1.6.0\0"
             VALUE "InternalName", "BetterTrafficMonitorAiUsage\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 QQRM\0"
             VALUE "OriginalFilename", "BetterTrafficMonitorAiUsage.dll\0"
             VALUE "ProductName", "Better TrafficMonitor AI Usage\0"
-            VALUE "ProductVersion", "1.2.1\0"
+            VALUE "ProductVersion", "1.6.0\0"
         END
     END
     BLOCK "VarFileInfo"
@@ -34,7 +34,7 @@ BEGIN
     END
 END
 
-IDD_DISPLAY_OPTIONS DIALOGEX 0, 0, 274, 250
+IDD_DISPLAY_OPTIONS DIALOGEX 0, 0, 274, 306
 STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
 CAPTION "Better TrafficMonitor AI Usage"
 FONT 9, "Segoe UI"
@@ -58,6 +58,17 @@ BEGIN
 
     CONTROL         "Weekly limit first (7d / 5h)", IDC_CLAUDE_WEEKLY_FIRST, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 18, 204, 230, 12
 
-    DEFPUSHBUTTON   "OK", IDOK, 162, 228, 50, 14
-    PUSHBUTTON      "Cancel", IDCANCEL, 216, 228, 50, 14
+    GROUPBOX        "ZCode peak hours (red = x3 peak, violet = near peak)", -1, 8, 222, 258, 60
+    CONTROL         "Highlight peak hours", IDC_ZCODE_PEAK_ENABLED, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 18, 235, 100, 12
+    CONTROL         "Weekdays only (weekends off-peak)", IDC_ZCODE_PEAK_WEEKDAYS, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 18, 251, 130, 12
+    LTEXT           "from:", -1, 18, 266, 24, 10
+    EDITTEXT         IDC_ZCODE_PEAK_START, 44, 264, 36, 13, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "to:", -1, 84, 266, 16, 10
+    EDITTEXT         IDC_ZCODE_PEAK_END, 102, 264, 36, 13, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "UTC offset:", -1, 144, 266, 42, 10
+    EDITTEXT         IDC_ZCODE_PEAK_UTC, 188, 264, 34, 13, ES_AUTOHSCROLL | WS_TABSTOP
+    LTEXT           "z.ai multiplies credit costs on weekdays 14:00-18:00 Singapore time (UTC+8), 09:00-13:00 in Moscow.", -1, 144, 234, 116, 28
+
+    DEFPUSHBUTTON   "OK", IDOK, 162, 284, 50, 14
+    PUSHBUTTON      "Cancel", IDCANCEL, 216, 284, 50, 14
 END

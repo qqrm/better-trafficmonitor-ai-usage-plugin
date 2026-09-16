@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Version = "1.2.1"
+    [string]$Version = "1.6.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,13 +22,10 @@ if (-not (Test-Path -LiteralPath $cargo)) { throw "cargo was not found" }
 $manifest = Join-Path $repo "Cargo.toml"
 function Invoke-CargoChecked([string[]]$CargoArguments, [string]$Label) {
     Write-Host "Running cargo $Label"
-    if ($env:GITHUB_ACTIONS -eq "true") {
-        & $cargo @CargoArguments
-        if ($LASTEXITCODE -ne 0) { throw "cargo $Label failed" }
-    } else {
-        $process = Start-Process -FilePath $cargo -ArgumentList $CargoArguments -NoNewWindow -Wait -PassThru
-        if ($process.ExitCode -ne 0) { throw "cargo $Label failed" }
-    }
+    # Direct invocation keeps arguments with spaces (for example a user
+    # profile path) properly quoted; Start-Process -ArgumentList splits them.
+    & $cargo @CargoArguments
+    if ($LASTEXITCODE -ne 0) { throw "cargo $Label failed" }
 }
 
 Invoke-CargoChecked @("test", "--release", "--manifest-path", $manifest) "test"
@@ -44,23 +41,21 @@ $msbuild = Get-Content -LiteralPath $vswhereOutput | Select-Object -First 1
 if (-not $msbuild) { throw "MSBuild was not found" }
 
 $msbuildResponse = Join-Path $build "msbuild.rsp"
+# Quote every path: response-file arguments are split on spaces, and the
+# repository can live under a profile path that contains one. Trailing
+# backslashes are doubled so the closing quote is not escaped.
 @(
-    $project
+    "`"$project`""
     "-m"
     "-t:Rebuild"
     "-p:Configuration=Release"
     "-p:Platform=x64"
-    "-p:IntDir=$obj\"
-    "-p:OutDir=$bin\"
+    "-p:IntDir=`"$obj\\`""
+    "-p:OutDir=`"$bin\\`""
 ) | Set-Content -LiteralPath $msbuildResponse -Encoding ASCII
 Write-Host "Building the x64 TrafficMonitor DLL"
-if ($env:GITHUB_ACTIONS -eq "true") {
-    & $msbuild "@$msbuildResponse"
-    if ($LASTEXITCODE -ne 0) { throw "MSBuild failed" }
-} else {
-    $msbuildProcess = Start-Process -FilePath $msbuild -ArgumentList "@$msbuildResponse" -NoNewWindow -Wait -PassThru
-    if ($msbuildProcess.ExitCode -ne 0) { throw "MSBuild failed" }
-}
+& $msbuild "@$msbuildResponse"
+if ($LASTEXITCODE -ne 0) { throw "MSBuild failed" }
 
 Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path (Join-Path $stage "plugins") -Force | Out-Null
