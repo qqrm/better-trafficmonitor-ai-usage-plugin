@@ -268,8 +268,8 @@ int MeasureTextWidth(CDC* pDC, const wchar_t* text)
     return pDC->GetTextExtent(text).cx;
 }
 
-// Keep the short-lived, weekly, and reset values in stable columns across
-// providers. Codex intentionally leaves the first (5h) column blank.
+// Keep the short-lived, weekly, and reset values in shared compact columns.
+// Codex intentionally leaves the first (5h) column blank.
 struct UsageTextColumns
 {
     int five_hour_left{};
@@ -279,14 +279,22 @@ struct UsageTextColumns
     int reset_left{};
 };
 
-UsageTextColumns GetUsageTextColumns(CDC* pDC, int left)
+UsageTextColumns GetUsageTextColumns(
+    CDC* pDC,
+    int left,
+    const std::wstring& five_hour_text,
+    const std::wstring& codex_weekly_text,
+    const std::wstring& zcode_weekly_text)
 {
     constexpr int gap = 3;
-    const int percentage_width = MeasureTextWidth(pDC, L"100%");
+    const int five_hour_width = MeasureTextWidth(pDC, five_hour_text.c_str());
+    const int weekly_width = max(
+        MeasureTextWidth(pDC, codex_weekly_text.c_str()),
+        MeasureTextWidth(pDC, zcode_weekly_text.c_str()));
     const int separator_width = MeasureTextWidth(pDC, L"/");
-    const int first_separator_left = left + percentage_width + gap;
+    const int first_separator_left = left + five_hour_width + gap;
     const int weekly_left = first_separator_left + separator_width + gap;
-    const int second_separator_left = weekly_left + percentage_width + gap;
+    const int second_separator_left = weekly_left + weekly_width + gap;
     return UsageTextColumns{
         left,
         first_separator_left,
@@ -789,12 +797,17 @@ void DrawCodexOverview(CDC* pDC, int x, int y, int w, int h, bool dark_mode)
     for (const auto& point : g_usage_core.GetHistory(UsageWindow::Codex7d))
         history.push_back({ point.timestamp_unix_seconds, point.percentage });
     const UsageMetric metric = g_usage_core.GetMetric(UsageWindow::Codex7d);
+    const UsageMetric zcode_five_hour = g_usage_core.GetMetric(UsageWindow::ZCode5h);
+    const UsageMetric zcode_seven_day = g_usage_core.GetMetric(UsageWindow::ZCode7d);
     const CRect lane_rect(item_rect.left + icon_size + 4, item_rect.top, item_rect.right, item_rect.bottom);
     DrawUsageHistoryLane(pDC, lane_rect, style, L"",
         metric.available, history, 7LL * 24LL * 60LL * 60LL, style.fill);
 
-    const UsageTextColumns columns = GetUsageTextColumns(pDC, lane_rect.left + 3);
     const std::wstring weekly_text = FormatDisplayedPercentage(metric.available, metric.percentage);
+    const std::wstring zcode_five_hour_text = FormatDisplayedPercentage(zcode_five_hour.available, zcode_five_hour.percentage);
+    const std::wstring zcode_weekly_text = FormatDisplayedPercentage(zcode_seven_day.available, zcode_seven_day.percentage);
+    const UsageTextColumns columns = GetUsageTextColumns(
+        pDC, lane_rect.left + 3, zcode_five_hour_text, weekly_text, zcode_weekly_text);
     const std::wstring reset_text = FormatTimeUntilReset(metric.reset_at_unix_seconds);
     const int old_bk_mode = pDC->SetBkMode(TRANSPARENT);
     CRect text_rect(lane_rect.left, lane_rect.top, lane_rect.right - 3, lane_rect.bottom);
@@ -850,6 +863,7 @@ void DrawZCodeOverview(CDC* pDC, int x, int y, int w, int h, bool dark_mode)
 
     const UsageMetric five_hour = g_usage_core.GetMetric(UsageWindow::ZCode5h);
     const UsageMetric seven_day = g_usage_core.GetMetric(UsageWindow::ZCode7d);
+    const UsageMetric codex_seven_day = g_usage_core.GetMetric(UsageWindow::Codex7d);
     std::vector<UsageHistoryPoint> five_hour_history;
     for (const auto& point : g_usage_core.GetHistory(UsageWindow::ZCode5h))
         five_hour_history.push_back({ point.timestamp_unix_seconds, point.percentage });
@@ -870,7 +884,9 @@ void DrawZCodeOverview(CDC* pDC, int x, int y, int w, int h, bool dark_mode)
 
     const std::wstring seven_day_text = FormatDisplayedPercentage(seven_day.available, seven_day.percentage);
     const std::wstring five_hour_text = FormatDisplayedPercentage(five_hour.available, five_hour.percentage);
-    const UsageTextColumns columns = GetUsageTextColumns(pDC, lane_rect.left + 3);
+    const std::wstring codex_weekly_text = FormatDisplayedPercentage(codex_seven_day.available, codex_seven_day.percentage);
+    const UsageTextColumns columns = GetUsageTextColumns(
+        pDC, lane_rect.left + 3, five_hour_text, codex_weekly_text, seven_day_text);
     const int old_bk_mode = pDC->SetBkMode(TRANSPARENT);
     CRect text_rect(lane_rect.left, lane_rect.top, lane_rect.right - 3, lane_rect.bottom);
     COLORREF old_text_color = pDC->SetTextColor(five_hour.available ? five_hour_color : style.unavailable_text);
@@ -1314,7 +1330,7 @@ const wchar_t* CBetterTrafficMonitorAiUsagePlugin::GetInfo(PluginInfoIndex index
         value = L"Copyright (C) 2026 Better TrafficMonitor AI Usage contributors";
         break;
     case TMI_VERSION:
-        value = L"1.7.1";
+        value = L"1.7.2";
         break;
     case TMI_URL:
         value = L"https://github.com/qqrm/better-trafficmonitor-ai-usage-plugin";
