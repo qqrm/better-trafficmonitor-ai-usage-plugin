@@ -10,11 +10,11 @@ It reads Claude data already stored by the desktop client on the same Windows ma
 
 - `Claude Usage`: Claude five-hour and seven-day burn-down history in one compact row.
 - `Codex Usage`: Codex seven-day burn-down history, percentage, and time remaining until reset (`d`, then `h`, then `m`; seconds are omitted).
-- `ZCode Usage`: ZCode (z.ai coding plan) five-hour and seven-day prompt burn-down history in one compact row.
+- `ZCode Usage`: ZCode (z.ai coding plan) five-hour and weekly credit pools from z.ai's quota endpoint. The compact row shows the two percentages and the time remaining until the weekly pool resets (`7d% / 5h% / 6d`, with the first two following the selected order); it is colored by rate period — blue off-peak, violet within an hour of the peak window, red inside it (with an `x3` mark while peak rates apply).
 
-The graph can display either remaining capacity (100% to 0%) or used capacity (0% to 100%). Claude can be monochrome, adaptive, or always colored. A single item in a tall taskbar cell can be centered, placed at the top or bottom, or stretched.
+The graph can display either remaining capacity (100% to 0%) or used capacity (0% to 100%). Claude can be monochrome, adaptive, or always colored. A single item in a tall taskbar cell can be centered, placed at the top or bottom, or stretched. Each provider can be hidden in the plug-in options (`Providers` group) — hidden providers are not offered to TrafficMonitor at all; the change applies after TrafficMonitor restarts.
 
-Hovering over the widget shows each window's used and remaining percentage. It also shows the next reset time reported by Claude Desktop or Codex. The Claude reset is shown as a provider-wide `next reset` because the local record does not identify which displayed window it belongs to. For ZCode the tooltip shows the prompt counts behind each percentage and the five-hour window reset derived from the first prompt in the window.
+Hovering over the widget shows each window's used and remaining percentage. It also shows the next reset time reported by Claude Desktop or Codex. The Claude reset is shown as a provider-wide `next reset` because the local record does not identify which displayed window it belongs to. For ZCode the tooltip shows the credit counts behind each percentage plus the individual five-hour and weekly-pool reset times.
 
 ## Install
 

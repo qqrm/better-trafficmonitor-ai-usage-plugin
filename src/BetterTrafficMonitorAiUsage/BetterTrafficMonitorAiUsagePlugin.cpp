@@ -44,6 +44,11 @@ std::atomic<GraphDisplayMode> g_graph_display_mode{ GraphDisplayMode::Remaining 
 std::atomic<SingleItemLayout> g_single_item_layout{ SingleItemLayout::Center };
 std::atomic<ColorMode> g_color_mode{ ColorMode::Adaptive };
 std::atomic_bool g_claude_weekly_first{ true };
+// Hidden providers are not returned to TrafficMonitor at all, so they
+// disappear from the taskbar and from its display-item list.
+std::atomic_bool g_show_claude{ true };
+std::atomic_bool g_show_codex{ true };
+std::atomic_bool g_show_zcode{ true };
 // z.ai charges 3x credits for GLM during weekday peak hours in its local
 // time zone; the widget turns red inside the configured window.
 std::atomic_bool g_zcode_peak_enabled{ true };
@@ -841,6 +846,16 @@ void DrawZCodeOverview(CDC* pDC, int x, int y, int w, int h, bool dark_mode)
     pDC->DrawTextW(second_text.c_str(), -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     text_rect.left += MeasureTextWidth(pDC, second_text.c_str());
 
+    // The third value always belongs to the weekly pool, regardless of which
+    // percentage the user chose to display first.
+    const std::wstring weekly_reset_text = FormatTimeUntilReset(seven_day.reset_at_unix_seconds);
+    pDC->SetTextColor(style.text_on_track);
+    pDC->DrawTextW(L"/", -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    text_rect.left += MeasureTextWidth(pDC, L"/") + 3;
+    pDC->SetTextColor(seven_day.available ? seven_day_text_color : style.unavailable_text);
+    pDC->DrawTextW(weekly_reset_text.c_str(), -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    text_rect.left += MeasureTextWidth(pDC, weekly_reset_text.c_str());
+
     // The active credit-cost multiplier of the main model, right-aligned;
     // shown only while the peak window is actually active, and only when the
     // two percentages leave enough room for it.
@@ -1056,6 +1071,8 @@ const wchar_t* CZCodeUsageItem::GetItemValueText() const
     m_value_text_cache += FormatDisplayedPercentage(
         weekly_first ? five_hour.available : seven_day.available,
         weekly_first ? five_hour.percentage : seven_day.percentage);
+    m_value_text_cache += L" / ";
+    m_value_text_cache += FormatTimeUntilReset(seven_day.reset_at_unix_seconds);
     if (IsZCodePeakHours())
         m_value_text_cache += L" x3";
     return m_value_text_cache.c_str();
@@ -1063,7 +1080,7 @@ const wchar_t* CZCodeUsageItem::GetItemValueText() const
 
 const wchar_t* CZCodeUsageItem::GetItemValueSampleText() const
 {
-    return L"99.9% / 99.9% x3";
+    return L"99.9% / 99.9% / 7d x3";
 }
 
 bool CZCodeUsageItem::IsCustomDraw() const
@@ -1073,7 +1090,7 @@ bool CZCodeUsageItem::IsCustomDraw() const
 
 int CZCodeUsageItem::GetItemWidth() const
 {
-    return 106;
+    return 136;
 }
 
 int CZCodeUsageItem::GetItemWidthEx(void* hDC) const
@@ -1082,7 +1099,7 @@ int CZCodeUsageItem::GetItemWidthEx(void* hDC) const
     if (pDC == nullptr)
         return GetItemWidth();
 
-    return 106;
+    return 136;
 }
 
 void CZCodeUsageItem::DrawItem(void* hDC, int x, int y, int w, int h, bool dark_mode)
@@ -1102,17 +1119,22 @@ CBetterTrafficMonitorAiUsagePlugin& CBetterTrafficMonitorAiUsagePlugin::Instance
 
 IPluginItem* CBetterTrafficMonitorAiUsagePlugin::GetItem(int index)
 {
-    switch (index)
+    IPluginItem* const items[] = { &m_five_hour_item, &m_codex_seven_day_item, &m_zcode_five_hour_item };
+    const bool shown[] = {
+        g_show_claude.load(std::memory_order_relaxed),
+        g_show_codex.load(std::memory_order_relaxed),
+        g_show_zcode.load(std::memory_order_relaxed),
+    };
+    int visible = 0;
+    for (size_t provider = 0; provider < sizeof(items) / sizeof(items[0]); ++provider)
     {
-    case 0:
-        return &m_five_hour_item;
-    case 1:
-        return &m_codex_seven_day_item;
-    case 2:
-        return &m_zcode_five_hour_item;
-    default:
-        return nullptr;
+        if (!shown[provider])
+            continue;
+        if (visible == index)
+            return items[provider];
+        ++visible;
     }
+    return nullptr;
 }
 
 void CBetterTrafficMonitorAiUsagePlugin::OnInitialize(ITrafficMonitor* pApp)
@@ -1133,6 +1155,9 @@ void CBetterTrafficMonitorAiUsagePlugin::OnInitialize(ITrafficMonitor* pApp)
     g_single_item_layout.store(layout >= 0 && layout <= 3 ? static_cast<SingleItemLayout>(layout) : SingleItemLayout::Center, std::memory_order_relaxed);
     g_color_mode.store(color >= 0 && color <= 2 ? static_cast<ColorMode>(color) : ColorMode::Adaptive, std::memory_order_relaxed);
     g_claude_weekly_first.store(claude_weekly_first != 0, std::memory_order_relaxed);
+    g_show_claude.store(GetPrivateProfileIntW(L"Display", L"ShowClaude", 1, m_config_path.c_str()) != 0, std::memory_order_relaxed);
+    g_show_codex.store(GetPrivateProfileIntW(L"Display", L"ShowCodex", 1, m_config_path.c_str()) != 0, std::memory_order_relaxed);
+    g_show_zcode.store(GetPrivateProfileIntW(L"Display", L"ShowZCode", 1, m_config_path.c_str()) != 0, std::memory_order_relaxed);
 
     const int peak_enabled = GetPrivateProfileIntW(L"ZCode", L"PeakEnabled", 1, m_config_path.c_str());
     const int peak_start = GetPrivateProfileIntW(L"ZCode", L"PeakStartMinute", 9 * 60, m_config_path.c_str());
@@ -1166,6 +1191,9 @@ ITMPlugin::OptionReturn CBetterTrafficMonitorAiUsagePlugin::ShowOptionsDialog(vo
     const int current_peak_end = g_zcode_peak_end_minute.load(std::memory_order_relaxed);
     const int current_peak_offset = g_zcode_peak_utc_offset_minutes.load(std::memory_order_relaxed);
     const bool current_peak_weekdays = g_zcode_peak_weekdays_only.load(std::memory_order_relaxed);
+    const bool current_show_claude = g_show_claude.load(std::memory_order_relaxed);
+    const bool current_show_codex = g_show_codex.load(std::memory_order_relaxed);
+    const bool current_show_zcode = g_show_zcode.load(std::memory_order_relaxed);
     CDisplayOptionsDialog dialog(
         static_cast<int>(current_graph),
         static_cast<int>(current_layout),
@@ -1176,6 +1204,9 @@ ITMPlugin::OptionReturn CBetterTrafficMonitorAiUsagePlugin::ShowOptionsDialog(vo
         current_peak_end,
         current_peak_offset,
         current_peak_weekdays,
+        current_show_claude,
+        current_show_codex,
+        current_show_zcode,
         CWnd::FromHandle(static_cast<HWND>(hParent)));
     if (dialog.DoModal() != IDOK)
         return OR_OPTION_UNCHANGED;
@@ -1189,13 +1220,19 @@ ITMPlugin::OptionReturn CBetterTrafficMonitorAiUsagePlugin::ShowOptionsDialog(vo
     const int chosen_peak_end = max(0, min(1439, dialog.ZCodePeakEndMinute()));
     const int chosen_peak_offset = max(-13 * 60, min(14 * 60, dialog.ZCodePeakUtcOffsetMinutes()));
     const bool chosen_peak_weekdays = dialog.ZCodePeakWeekdaysOnly();
+    const bool chosen_show_claude = dialog.ShowClaude();
+    const bool chosen_show_codex = dialog.ShowCodex();
+    const bool chosen_show_zcode = dialog.ShowZCode();
     if (chosen_graph == current_graph && chosen_layout == current_layout && chosen_color == current_color
         && chosen_claude_weekly_first == current_claude_weekly_first
         && chosen_peak_enabled == current_peak_enabled
         && chosen_peak_start == current_peak_start
         && chosen_peak_end == current_peak_end
         && chosen_peak_offset == current_peak_offset
-        && chosen_peak_weekdays == current_peak_weekdays)
+        && chosen_peak_weekdays == current_peak_weekdays
+        && chosen_show_claude == current_show_claude
+        && chosen_show_codex == current_show_codex
+        && chosen_show_zcode == current_show_zcode)
         return OR_OPTION_UNCHANGED;
 
     g_graph_display_mode.store(chosen_graph, std::memory_order_relaxed);
@@ -1207,12 +1244,18 @@ ITMPlugin::OptionReturn CBetterTrafficMonitorAiUsagePlugin::ShowOptionsDialog(vo
     g_zcode_peak_end_minute.store(chosen_peak_end, std::memory_order_relaxed);
     g_zcode_peak_utc_offset_minutes.store(chosen_peak_offset, std::memory_order_relaxed);
     g_zcode_peak_weekdays_only.store(chosen_peak_weekdays, std::memory_order_relaxed);
+    g_show_claude.store(chosen_show_claude, std::memory_order_relaxed);
+    g_show_codex.store(chosen_show_codex, std::memory_order_relaxed);
+    g_show_zcode.store(chosen_show_zcode, std::memory_order_relaxed);
     if (!m_config_path.empty())
     {
         WritePrivateProfileStringW(L"Display", L"Mode", chosen_graph == GraphDisplayMode::Used ? L"1" : L"0", m_config_path.c_str());
         WritePrivateProfileStringW(L"Display", L"SingleItemLayout", std::to_wstring(dialog.SingleItemLayout()).c_str(), m_config_path.c_str());
         WritePrivateProfileStringW(L"Display", L"ColorMode", std::to_wstring(dialog.ColorMode()).c_str(), m_config_path.c_str());
         WritePrivateProfileStringW(L"Display", L"ClaudeWeeklyFirst", chosen_claude_weekly_first ? L"1" : L"0", m_config_path.c_str());
+        WritePrivateProfileStringW(L"Display", L"ShowClaude", chosen_show_claude ? L"1" : L"0", m_config_path.c_str());
+        WritePrivateProfileStringW(L"Display", L"ShowCodex", chosen_show_codex ? L"1" : L"0", m_config_path.c_str());
+        WritePrivateProfileStringW(L"Display", L"ShowZCode", chosen_show_zcode ? L"1" : L"0", m_config_path.c_str());
         WritePrivateProfileStringW(L"ZCode", L"PeakEnabled", chosen_peak_enabled ? L"1" : L"0", m_config_path.c_str());
         WritePrivateProfileStringW(L"ZCode", L"PeakStartMinute", std::to_wstring(chosen_peak_start).c_str(), m_config_path.c_str());
         WritePrivateProfileStringW(L"ZCode", L"PeakEndMinute", std::to_wstring(chosen_peak_end).c_str(), m_config_path.c_str());
@@ -1240,7 +1283,7 @@ const wchar_t* CBetterTrafficMonitorAiUsagePlugin::GetInfo(PluginInfoIndex index
         value = L"Copyright (C) 2026 Better TrafficMonitor AI Usage contributors";
         break;
     case TMI_VERSION:
-        value = L"1.6.0";
+        value = L"1.7.0";
         break;
     case TMI_URL:
         value = L"https://github.com/qqrm/better-trafficmonitor-ai-usage-plugin";
@@ -1256,30 +1299,49 @@ const wchar_t* CBetterTrafficMonitorAiUsagePlugin::GetTooltipInfo()
 {
     g_usage_core.RefreshIfNeeded();
 
-    const UsageMetric claude_five_hour = g_usage_core.GetMetric(UsageWindow::Claude5h);
-    const UsageMetric claude_seven_day = g_usage_core.GetMetric(UsageWindow::Claude7d);
-    const UsageMetric codex_seven_day = g_usage_core.GetMetric(UsageWindow::Codex7d);
-    if (g_claude_weekly_first.load(std::memory_order_relaxed))
+    const bool show_claude = g_show_claude.load(std::memory_order_relaxed);
+    const bool show_codex = g_show_codex.load(std::memory_order_relaxed);
+    const bool show_zcode = g_show_zcode.load(std::memory_order_relaxed);
+    m_tooltip_text_cache.clear();
+    if (show_claude)
     {
-        m_tooltip_text_cache = L"Claude 7d: " + FormatLimitDetails(claude_seven_day);
-        m_tooltip_text_cache += L"\nClaude 5h: " + FormatLimitDetails(claude_five_hour);
+        const UsageMetric claude_five_hour = g_usage_core.GetMetric(UsageWindow::Claude5h);
+        const UsageMetric claude_seven_day = g_usage_core.GetMetric(UsageWindow::Claude7d);
+        if (g_claude_weekly_first.load(std::memory_order_relaxed))
+        {
+            m_tooltip_text_cache = L"Claude 7d: " + FormatLimitDetails(claude_seven_day);
+            m_tooltip_text_cache += L"\nClaude 5h: " + FormatLimitDetails(claude_five_hour);
+        }
+        else
+        {
+            m_tooltip_text_cache = L"Claude 5h: " + FormatLimitDetails(claude_five_hour);
+            m_tooltip_text_cache += L"\nClaude 7d: " + FormatLimitDetails(claude_seven_day);
+        }
+        m_tooltip_text_cache += L"\nClaude next reset: " + FormatResetTime(g_usage_core.GetClaudeNextResetAtUnixSeconds());
     }
-    else
+    if (show_codex)
     {
-        m_tooltip_text_cache = L"Claude 5h: " + FormatLimitDetails(claude_five_hour);
-        m_tooltip_text_cache += L"\nClaude 7d: " + FormatLimitDetails(claude_seven_day);
+        const UsageMetric codex_seven_day = g_usage_core.GetMetric(UsageWindow::Codex7d);
+        if (!m_tooltip_text_cache.empty())
+            m_tooltip_text_cache += L"\n\n";
+        m_tooltip_text_cache += L"Codex 7d: " + FormatLimitDetails(codex_seven_day) + L"; resets: " + FormatResetTime(codex_seven_day.reset_at_unix_seconds);
     }
-    m_tooltip_text_cache += L"\nClaude next reset: " + FormatResetTime(g_usage_core.GetClaudeNextResetAtUnixSeconds());
-    m_tooltip_text_cache += L"\n\nCodex 7d: " + FormatLimitDetails(codex_seven_day) + L"; resets: " + FormatResetTime(codex_seven_day.reset_at_unix_seconds);
-
-    const UsageMetric zcode_five_hour = g_usage_core.GetMetric(UsageWindow::ZCode5h);
-    const UsageMetric zcode_seven_day = g_usage_core.GetMetric(UsageWindow::ZCode7d);
-    m_tooltip_text_cache += L"\n\nZCode 7d: " + FormatZCodeLimitDetails(
-        zcode_seven_day, g_usage_core.GetZCodeUsedUnits(UsageWindow::ZCode7d), g_usage_core.GetZCodeLimitUnits(UsageWindow::ZCode7d));
-    m_tooltip_text_cache += L"\nZCode 5h: " + FormatZCodeLimitDetails(
-        zcode_five_hour, g_usage_core.GetZCodeUsedUnits(UsageWindow::ZCode5h), g_usage_core.GetZCodeLimitUnits(UsageWindow::ZCode5h));
-    m_tooltip_text_cache += L"\nZCode 5h resets: " + FormatResetTime(g_usage_core.GetZCodeNextResetAtUnixSeconds());
-    m_tooltip_text_cache += L"\nZCode rates: " + FormatZCodePeakStatus();
+    if (show_zcode)
+    {
+        const UsageMetric zcode_five_hour = g_usage_core.GetMetric(UsageWindow::ZCode5h);
+        const UsageMetric zcode_seven_day = g_usage_core.GetMetric(UsageWindow::ZCode7d);
+        if (!m_tooltip_text_cache.empty())
+            m_tooltip_text_cache += L"\n\n";
+        m_tooltip_text_cache += L"ZCode 7d: " + FormatZCodeLimitDetails(
+            zcode_seven_day, g_usage_core.GetZCodeUsedUnits(UsageWindow::ZCode7d), g_usage_core.GetZCodeLimitUnits(UsageWindow::ZCode7d));
+        m_tooltip_text_cache += L"\nZCode 5h: " + FormatZCodeLimitDetails(
+            zcode_five_hour, g_usage_core.GetZCodeUsedUnits(UsageWindow::ZCode5h), g_usage_core.GetZCodeLimitUnits(UsageWindow::ZCode5h));
+        m_tooltip_text_cache += L"\nZCode 7d resets: " + FormatResetTime(zcode_seven_day.reset_at_unix_seconds);
+        m_tooltip_text_cache += L"\nZCode 5h resets: " + FormatResetTime(g_usage_core.GetZCodeNextResetAtUnixSeconds());
+        m_tooltip_text_cache += L"\nZCode rates: " + FormatZCodePeakStatus();
+    }
+    if (m_tooltip_text_cache.empty())
+        m_tooltip_text_cache = L"All providers are hidden";
     return m_tooltip_text_cache.c_str();
 }
 

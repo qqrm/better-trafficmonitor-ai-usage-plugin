@@ -63,7 +63,8 @@ void WriteOffsetEdit(CDialog* dialog, int control_id, int offset_minutes)
 
 CDisplayOptionsDialog::CDisplayOptionsDialog(int graph_mode, int single_item_layout, int color_mode, bool claude_weekly_first,
     bool zcode_peak_enabled, int zcode_peak_start_minute, int zcode_peak_end_minute,
-    int zcode_peak_utc_offset_minutes, bool zcode_peak_weekdays_only, CWnd* parent)
+    int zcode_peak_utc_offset_minutes, bool zcode_peak_weekdays_only,
+    bool show_claude, bool show_codex, bool show_zcode, CWnd* parent)
     : CDialogEx(IDD_DISPLAY_OPTIONS, parent)
     , m_graph_mode(graph_mode)
     , m_single_item_layout(single_item_layout)
@@ -74,6 +75,9 @@ CDisplayOptionsDialog::CDisplayOptionsDialog(int graph_mode, int single_item_lay
     , m_zcode_peak_end_minute(zcode_peak_end_minute)
     , m_zcode_peak_utc_offset_minutes(zcode_peak_utc_offset_minutes)
     , m_zcode_peak_weekdays_only(zcode_peak_weekdays_only)
+    , m_show_claude(show_claude)
+    , m_show_codex(show_codex)
+    , m_show_zcode(show_zcode)
 {
 }
 
@@ -86,6 +90,9 @@ BOOL CDisplayOptionsDialog::OnInitDialog()
     CheckDlgButton(IDC_CLAUDE_WEEKLY_FIRST, m_claude_weekly_first ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(IDC_ZCODE_PEAK_ENABLED, m_zcode_peak_enabled ? BST_CHECKED : BST_UNCHECKED);
     CheckDlgButton(IDC_ZCODE_PEAK_WEEKDAYS, m_zcode_peak_weekdays_only ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(IDC_SHOW_CLAUDE, m_show_claude ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(IDC_SHOW_CODEX, m_show_codex ? BST_CHECKED : BST_UNCHECKED);
+    CheckDlgButton(IDC_SHOW_ZCODE, m_show_zcode ? BST_CHECKED : BST_UNCHECKED);
     WriteMinuteEdit(this, IDC_ZCODE_PEAK_START, m_zcode_peak_start_minute);
     WriteMinuteEdit(this, IDC_ZCODE_PEAK_END, m_zcode_peak_end_minute);
     WriteOffsetEdit(this, IDC_ZCODE_PEAK_UTC, m_zcode_peak_utc_offset_minutes);
@@ -115,6 +122,9 @@ void CDisplayOptionsDialog::OnOK()
     m_claude_weekly_first = IsDlgButtonChecked(IDC_CLAUDE_WEEKLY_FIRST) == BST_CHECKED;
     m_zcode_peak_enabled = IsDlgButtonChecked(IDC_ZCODE_PEAK_ENABLED) == BST_CHECKED;
     m_zcode_peak_weekdays_only = IsDlgButtonChecked(IDC_ZCODE_PEAK_WEEKDAYS) == BST_CHECKED;
+    m_show_claude = IsDlgButtonChecked(IDC_SHOW_CLAUDE) == BST_CHECKED;
+    m_show_codex = IsDlgButtonChecked(IDC_SHOW_CODEX) == BST_CHECKED;
+    m_show_zcode = IsDlgButtonChecked(IDC_SHOW_ZCODE) == BST_CHECKED;
     m_zcode_peak_start_minute = max(0, min(1439, ReadMinuteEdit(this, IDC_ZCODE_PEAK_START, m_zcode_peak_start_minute)));
     m_zcode_peak_end_minute = max(0, min(1439, ReadMinuteEdit(this, IDC_ZCODE_PEAK_END, m_zcode_peak_end_minute)));
     m_zcode_peak_utc_offset_minutes = max(-13 * 60, min(14 * 60, ReadMinuteEdit(this, IDC_ZCODE_PEAK_UTC, m_zcode_peak_utc_offset_minutes)));

@@ -1331,6 +1331,7 @@ mod tests {
         assert_eq!(quota.week.used_units, 13667);
         assert_eq!(quota.week.limit_units, 60000);
         assert_eq!(quota.week.percentage, 22.0);
+        assert_eq!(quota.week.reset_at_unix_seconds, 1_790_096_970);
     }
 
     #[test]
