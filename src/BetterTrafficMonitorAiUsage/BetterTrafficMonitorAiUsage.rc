@@ -2,8 +2,8 @@
 #include <windows.h>
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION 1,7,0,0
- PRODUCTVERSION 1,7,0,0
+ FILEVERSION 1,7,1,0
+ PRODUCTVERSION 1,7,1,0
  FILEFLAGSMASK 0x3fL
 #ifdef _DEBUG
  FILEFLAGS 0x1L
@@ -20,12 +20,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "QQRM\0"
             VALUE "FileDescription", "Better TrafficMonitor AI Usage\0"
-            VALUE "FileVersion", "1.7.0\0"
+            VALUE "FileVersion", "1.7.1\0"
             VALUE "InternalName", "BetterTrafficMonitorAiUsage\0"
             VALUE "LegalCopyright", "Copyright (C) 2026 QQRM\0"
             VALUE "OriginalFilename", "BetterTrafficMonitorAiUsage.dll\0"
             VALUE "ProductName", "Better TrafficMonitor AI Usage\0"
-            VALUE "ProductVersion", "1.7.0\0"
+            VALUE "ProductVersion", "1.7.1\0"
         END
     END
     BLOCK "VarFileInfo"
@@ -56,7 +56,7 @@ BEGIN
     CONTROL         "Always colored", IDC_COLOR_ALWAYS, "Button", BS_AUTORADIOBUTTON, 138, 159, 105, 12
     LTEXT           "Adaptive: colored with two rows, monochrome when alone.", -1, 138, 175, 118, 17
 
-    CONTROL         "Weekly limit first (7d / 5h)", IDC_CLAUDE_WEEKLY_FIRST, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 18, 204, 230, 12
+    CONTROL         "Claude: weekly limit first (7d / 5h)", IDC_CLAUDE_WEEKLY_FIRST, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 18, 204, 230, 12
 
     GROUPBOX        "Providers (applies after TrafficMonitor restart)", -1, 8, 222, 258, 40
     CONTROL         "Claude (Anthropic)", IDC_SHOW_CLAUDE, "Button", BS_AUTOCHECKBOX | WS_TABSTOP, 18, 236, 84, 12

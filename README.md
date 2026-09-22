@@ -9,8 +9,8 @@ It reads Claude data already stored by the desktop client on the same Windows ma
 ## Display items
 
 - `Claude Usage`: Claude five-hour and seven-day burn-down history in one compact row.
-- `Codex Usage`: Codex seven-day burn-down history, percentage, and time remaining until reset (`d`, then `h`, then `m`; seconds are omitted).
-- `ZCode Usage`: ZCode (z.ai coding plan) five-hour and weekly credit pools from z.ai's quota endpoint. The compact row shows the two percentages and the time remaining until the weekly pool resets (`7d% / 5h% / 6d`, with the first two following the selected order); it is colored by rate period — blue off-peak, violet within an hour of the peak window, red inside it (with an `x3` mark while peak rates apply).
+- `Codex Usage`: Codex seven-day burn-down history, percentage, and time remaining until reset (`d`, then `h`, then `m`; seconds are omitted). It leaves the five-hour column empty so its weekly percentage and reset time line up with ZCode.
+- `ZCode Usage`: ZCode (z.ai coding plan) five-hour and weekly credit pools from z.ai's quota endpoint. The compact row uses fixed columns for `5h% / 7d% / 6d`; it is colored by rate period — blue off-peak, violet within an hour of the peak window, red inside it (with an `x3` mark while peak rates apply).
 
 The graph can display either remaining capacity (100% to 0%) or used capacity (0% to 100%). Claude can be monochrome, adaptive, or always colored. A single item in a tall taskbar cell can be centered, placed at the top or bottom, or stretched. Each provider can be hidden in the plug-in options (`Providers` group) — hidden providers are not offered to TrafficMonitor at all; the change applies after TrafficMonitor restarts.
 
