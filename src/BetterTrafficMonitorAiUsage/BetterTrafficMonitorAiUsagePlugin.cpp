@@ -269,13 +269,15 @@ int MeasureTextWidth(CDC* pDC, const wchar_t* text)
 }
 
 // Keep the short-lived, weekly, and reset values in shared compact columns.
-// Codex intentionally leaves the first (5h) column blank.
+// Codex intentionally leaves the 5h columns blank.
 struct UsageTextColumns
 {
     int five_hour_left{};
     int first_separator_left{};
-    int weekly_left{};
+    int five_hour_reset_left{};
     int second_separator_left{};
+    int weekly_left{};
+    int third_separator_left{};
     int reset_left{};
 };
 
@@ -283,24 +285,30 @@ UsageTextColumns GetUsageTextColumns(
     CDC* pDC,
     int left,
     const std::wstring& five_hour_text,
+    const std::wstring& five_hour_reset_text,
     const std::wstring& codex_weekly_text,
     const std::wstring& zcode_weekly_text)
 {
     constexpr int gap = 3;
     const int five_hour_width = MeasureTextWidth(pDC, five_hour_text.c_str());
+    const int five_hour_reset_width = MeasureTextWidth(pDC, five_hour_reset_text.c_str());
     const int weekly_width = max(
         MeasureTextWidth(pDC, codex_weekly_text.c_str()),
         MeasureTextWidth(pDC, zcode_weekly_text.c_str()));
     const int separator_width = MeasureTextWidth(pDC, L"/");
     const int first_separator_left = left + five_hour_width + gap;
-    const int weekly_left = first_separator_left + separator_width + gap;
-    const int second_separator_left = weekly_left + weekly_width + gap;
+    const int five_hour_reset_left = first_separator_left + separator_width + gap;
+    const int second_separator_left = five_hour_reset_left + five_hour_reset_width + gap;
+    const int weekly_left = second_separator_left + separator_width + gap;
+    const int third_separator_left = weekly_left + weekly_width + gap;
     return UsageTextColumns{
         left,
         first_separator_left,
-        weekly_left,
+        five_hour_reset_left,
         second_separator_left,
-        second_separator_left + separator_width + gap,
+        weekly_left,
+        third_separator_left,
+        third_separator_left + separator_width + gap,
     };
 }
 
@@ -805,9 +813,10 @@ void DrawCodexOverview(CDC* pDC, int x, int y, int w, int h, bool dark_mode)
 
     const std::wstring weekly_text = FormatDisplayedPercentage(metric.available, metric.percentage);
     const std::wstring zcode_five_hour_text = FormatDisplayedPercentage(zcode_five_hour.available, zcode_five_hour.percentage);
+    const std::wstring zcode_five_hour_reset_text = FormatTimeUntilReset(zcode_five_hour.reset_at_unix_seconds);
     const std::wstring zcode_weekly_text = FormatDisplayedPercentage(zcode_seven_day.available, zcode_seven_day.percentage);
     const UsageTextColumns columns = GetUsageTextColumns(
-        pDC, lane_rect.left + 3, zcode_five_hour_text, weekly_text, zcode_weekly_text);
+        pDC, lane_rect.left + 3, zcode_five_hour_text, zcode_five_hour_reset_text, weekly_text, zcode_weekly_text);
     const std::wstring reset_text = FormatTimeUntilReset(metric.reset_at_unix_seconds);
     const int old_bk_mode = pDC->SetBkMode(TRANSPARENT);
     CRect text_rect(lane_rect.left, lane_rect.top, lane_rect.right - 3, lane_rect.bottom);
@@ -815,7 +824,7 @@ void DrawCodexOverview(CDC* pDC, int x, int y, int w, int h, bool dark_mode)
     text_rect.left = columns.weekly_left;
     pDC->DrawTextW(weekly_text.c_str(), -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     pDC->SetTextColor(style.text_on_track);
-    text_rect.left = columns.second_separator_left;
+    text_rect.left = columns.third_separator_left;
     pDC->DrawTextW(L"/", -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     pDC->SetTextColor(metric.available ? style.text_on_track : style.unavailable_text);
     text_rect.left = columns.reset_left;
@@ -885,8 +894,9 @@ void DrawZCodeOverview(CDC* pDC, int x, int y, int w, int h, bool dark_mode)
     const std::wstring seven_day_text = FormatDisplayedPercentage(seven_day.available, seven_day.percentage);
     const std::wstring five_hour_text = FormatDisplayedPercentage(five_hour.available, five_hour.percentage);
     const std::wstring codex_weekly_text = FormatDisplayedPercentage(codex_seven_day.available, codex_seven_day.percentage);
+    const std::wstring five_hour_reset_text = FormatTimeUntilReset(five_hour.reset_at_unix_seconds);
     const UsageTextColumns columns = GetUsageTextColumns(
-        pDC, lane_rect.left + 3, five_hour_text, codex_weekly_text, seven_day_text);
+        pDC, lane_rect.left + 3, five_hour_text, five_hour_reset_text, codex_weekly_text, seven_day_text);
     const int old_bk_mode = pDC->SetBkMode(TRANSPARENT);
     CRect text_rect(lane_rect.left, lane_rect.top, lane_rect.right - 3, lane_rect.bottom);
     COLORREF old_text_color = pDC->SetTextColor(five_hour.available ? five_hour_color : style.unavailable_text);
@@ -895,13 +905,21 @@ void DrawZCodeOverview(CDC* pDC, int x, int y, int w, int h, bool dark_mode)
     pDC->SetTextColor(style.text_on_track);
     text_rect.left = columns.first_separator_left;
     pDC->DrawTextW(L"/", -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    // Hours until the five-hour quota resets, in the same blue as the 5h
+    // percentage: the burn rate inside the 5h window is the actionable one.
+    pDC->SetTextColor(five_hour.available ? five_hour_color : style.unavailable_text);
+    text_rect.left = columns.five_hour_reset_left;
+    pDC->DrawTextW(five_hour_reset_text.c_str(), -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    pDC->SetTextColor(style.text_on_track);
+    text_rect.left = columns.second_separator_left;
+    pDC->DrawTextW(L"/", -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     pDC->SetTextColor(seven_day.available ? seven_day_text_color : style.unavailable_text);
     text_rect.left = columns.weekly_left;
     pDC->DrawTextW(seven_day_text.c_str(), -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
 
     const std::wstring weekly_reset_text = FormatTimeUntilReset(seven_day.reset_at_unix_seconds);
     pDC->SetTextColor(style.text_on_track);
-    text_rect.left = columns.second_separator_left;
+    text_rect.left = columns.third_separator_left;
     pDC->DrawTextW(L"/", -1, &text_rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     pDC->SetTextColor(seven_day.available ? seven_day_text_color : style.unavailable_text);
     text_rect.left = columns.reset_left;
@@ -1117,6 +1135,8 @@ const wchar_t* CZCodeUsageItem::GetItemValueText() const
     const UsageMetric five_hour = g_usage_core.GetMetric(UsageWindow::ZCode5h);
     m_value_text_cache = FormatDisplayedPercentage(five_hour.available, five_hour.percentage);
     m_value_text_cache += L" / ";
+    m_value_text_cache += FormatTimeUntilReset(five_hour.reset_at_unix_seconds);
+    m_value_text_cache += L" / ";
     m_value_text_cache += FormatDisplayedPercentage(seven_day.available, seven_day.percentage);
     m_value_text_cache += L" / ";
     m_value_text_cache += FormatTimeUntilReset(seven_day.reset_at_unix_seconds);
@@ -1127,7 +1147,7 @@ const wchar_t* CZCodeUsageItem::GetItemValueText() const
 
 const wchar_t* CZCodeUsageItem::GetItemValueSampleText() const
 {
-    return L"99.9% / 99.9% / 7d x3";
+    return L"99.9% / 4h / 99.9% / 7d x3";
 }
 
 bool CZCodeUsageItem::IsCustomDraw() const
@@ -1330,7 +1350,7 @@ const wchar_t* CBetterTrafficMonitorAiUsagePlugin::GetInfo(PluginInfoIndex index
         value = L"Copyright (C) 2026 Better TrafficMonitor AI Usage contributors";
         break;
     case TMI_VERSION:
-        value = L"1.7.2";
+        value = L"1.8.0";
         break;
     case TMI_URL:
         value = L"https://github.com/qqrm/better-trafficmonitor-ai-usage-plugin";
