@@ -2,7 +2,7 @@
 
 A native [TrafficMonitor](https://github.com/zhongyang219/TrafficMonitor) plug-in that displays local Claude, Codex, and ZCode usage history directly in the taskbar widget.
 
-It reads Claude data already stored by the desktop client on the same Windows machine. For Codex, it uses local session records and its own seven-day local sample store for the graph, then starts the installed Codex app-server for the current authenticated account limits; each live point is appended to that store. It falls back to the latest fresh local sample when the app-server is unavailable. For ZCode (the z.ai coding plan), the taskbar percentages always come from the latest response of z.ai's quota endpoint, requested with the same locally stored API key the ZCode client already uses; the local sample store keeps the graphs and the last known values between requests. It does not open a browser or extract a web-session token.
+It reads Claude data already stored by the desktop client on the same Windows machine. For Codex, it uses local session records and its own seven-day local sample store for the graph, then requests current account limits directly over HTTPS using the existing Codex OAuth credentials. It never launches or terminates Codex processes. Each live point is appended to the local store; a fresh local sample is used if the request fails. For ZCode (the z.ai coding plan), the taskbar percentages always come from the latest response of z.ai's quota endpoint, requested with the same locally stored API key the ZCode client already uses; the local sample store keeps the graphs and the last known values between requests. It does not open a browser or extract a web-session token.
 
 ![Claude and Codex usage graphs in the TrafficMonitor taskbar widget](docs/images/taskbar-preview.png)
 
@@ -40,7 +40,7 @@ The plug-in currently ships for x64 TrafficMonitor. The DLL architecture must ma
 - Codex: `%CODEX_HOME%\sessions\**\*.jsonl`, or `%USERPROFILE%\.codex\sessions\**\*.jsonl` when `CODEX_HOME` is unset
 - ZCode: `%USERPROFILE%\.zcode\cli\db\db.sqlite` (`model_usage` ledger, read-only) and `%USERPROFILE%\.zcode\cli\rollout\model-io-*.jsonl`
 
-Data is refreshed at most once every 10 seconds. Claude usage history is treated as unavailable after one hour; Claude Desktop normally samples it every 15 minutes but can skip individual polls. Codex seeds its graph from the newest 24 session files (2 MiB per file) and then keeps a compact seven-day local sample history under `%LOCALAPPDATA%\\BetterTrafficMonitorAiUsage\\codex-history.json`. ZCode live percentages come straight from z.ai's `api/monitor/usage/quota/limit` endpoint (five-hour and weekly credit pools with their reset times). When a request fails, the last stored response stays on display until it goes stale (30 minutes for the five-hour lane, six hours for the weekly lane); locally computed percentages are never substituted. Every poll appends to a compact local sample history under `%LOCALAPPDATA%\\BetterTrafficMonitorAiUsage\\zcode-history.json`.
+Local data is refreshed at most once every 10 seconds. Codex network requests are limited to once per minute, with error backoff up to five minutes, a four-second timeout, bounded input sizes, and no redirects. The existing `%CODEX_HOME%\auth.json` (default `%USERPROFILE%\.codex\auth.json`) is read without modification; token refresh remains the Codex client's responsibility. The current HTTPS usage endpoint is an implementation detail, not a guaranteed public API. Cached samples retain their original timestamps and expire after 20 minutes or at reset. Claude usage history is treated as unavailable after one hour; Claude Desktop normally samples it every 15 minutes but can skip individual polls. Codex seeds its graph from the newest 24 session files (2 MiB per file) and then keeps a compact seven-day local sample history under `%LOCALAPPDATA%\\BetterTrafficMonitorAiUsage\\codex-history.json`. ZCode live percentages come straight from z.ai's `api/monitor/usage/quota/limit` endpoint (five-hour and weekly credit pools with their reset times). When a request fails, the last stored response stays on display until it goes stale (30 minutes for the five-hour lane, six hours for the weekly lane); locally computed percentages are never substituted. Every poll appends to a compact local sample history under `%LOCALAPPDATA%\\BetterTrafficMonitorAiUsage\\zcode-history.json`.
 
 ## Build
 
@@ -59,7 +59,7 @@ The installable ZIP and SHA-256 checksum are written to `dist\`.
 
 ## Privacy
 
-The usage core performs bounded local file reads, starts the installed Codex app-server to query the already authenticated local client, and calls z.ai's quota endpoint with the same locally stored API key the ZCode client itself uses for inference. It does not transmit credentials to any third party, invoke a browser, or access any other network resource.
+The usage core performs bounded local file reads and calls the OpenAI and z.ai usage endpoints with credentials already stored by their respective clients. HTTPS uses rustls, not Windows SSPI/Schannel. Credentials are not copied into plug-in settings or diagnostics; they are sent only to the respective provider. The plug-in does not start a Codex subprocess, invoke a browser, or modify authentication files.
 
 ## Author
 

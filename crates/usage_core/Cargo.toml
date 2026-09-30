@@ -1,6 +1,6 @@
 [package]
 name = "usage_core"
-version = "1.8.0"
+version = "1.8.2"
 edition = "2024"
 license = "MIT"
 publish = false

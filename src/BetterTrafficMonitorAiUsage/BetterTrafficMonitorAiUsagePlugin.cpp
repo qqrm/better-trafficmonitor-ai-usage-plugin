@@ -1350,7 +1350,7 @@ const wchar_t* CBetterTrafficMonitorAiUsagePlugin::GetInfo(PluginInfoIndex index
         value = L"Copyright (C) 2026 Better TrafficMonitor AI Usage contributors";
         break;
     case TMI_VERSION:
-        value = L"1.8.0";
+        value = L"1.8.2";
         break;
     case TMI_URL:
         value = L"https://github.com/qqrm/better-trafficmonitor-ai-usage-plugin";

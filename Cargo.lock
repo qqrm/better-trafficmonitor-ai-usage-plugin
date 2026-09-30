@@ -536,7 +536,7 @@ dependencies = [
 
 [[package]]
 name = "usage_core"
-version = "1.8.0"
+version = "1.8.2"
 dependencies = [
  "chrono",
  "leveldb-core",

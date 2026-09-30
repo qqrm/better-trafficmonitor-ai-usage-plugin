@@ -8,14 +8,8 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-#[cfg(windows)]
-use std::io::{BufRead, BufReader, Write};
-#[cfg(windows)]
-use std::process::{Command, Stdio};
-#[cfg(windows)]
-use std::sync::mpsc;
-#[cfg(windows)]
-use std::thread;
+#[cfg(any(windows, test))]
+mod codex_live;
 
 pub const MAX_HISTORY_POINTS: usize = 128;
 // Claude Desktop normally appends usage samples every 15 minutes, but may skip
@@ -39,6 +33,9 @@ const ZCODE_WEEKLY_WINDOW: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const ZCODE_FRESH_MAX_AGE: Duration = Duration::from_secs(30 * 60);
 const ZCODE_WEEKLY_FRESH_MAX_AGE: Duration = Duration::from_secs(6 * 60 * 60);
 const ZCODE_MAX_PERSISTED_HISTORY_POINTS: usize = 1024;
+// The server rolls a window slightly early, so a reset a bit past the window
+// end is normal; further out the timestamp belongs to another pool.
+const ZCODE_RESET_MARGIN: Duration = Duration::from_secs(60 * 60);
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -546,104 +543,11 @@ fn codex_history_with_live_sample(mut history: Vec<Sample>, live: Sample) -> Vec
 }
 
 #[cfg(windows)]
-fn newest_codex_executable() -> Option<PathBuf> {
-    let root = PathBuf::from(env::var_os("LOCALAPPDATA")?).join("OpenAI/Codex/bin");
-    fs::read_dir(root)
-        .ok()?
-        .flatten()
-        .map(|entry| entry.path().join("codex.exe"))
-        .filter(|path| path.is_file())
-        .max_by_key(|path| {
-            fs::metadata(path)
-                .and_then(|metadata| metadata.modified())
-                .ok()
-        })
-}
-
-#[cfg(windows)]
-fn request_codex_rate_limits(executable: PathBuf) -> Option<Value> {
-    use std::os::windows::process::CommandExt;
-
-    let mut command = Command::new(executable);
-    command
-        .args(["app-server", "--stdio"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        // Prevent a console window when TrafficMonitor refreshes the plug-in.
-        .creation_flags(0x0800_0000);
-    let mut child = command.spawn().ok()?;
-    let Some(mut stdin) = child.stdin.take() else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return None;
-    };
-    let Some(stdout) = child.stdout.take() else {
-        let _ = child.kill();
-        let _ = child.wait();
-        return None;
-    };
-    let mut write_succeeded = true;
-    for request in [
-        serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "clientInfo": { "name": "better-trafficmonitor-ai-usage-plugin", "version": env!("CARGO_PKG_VERSION") },
-                "capabilities": {}
-            }
-        }),
-        serde_json::json!({ "jsonrpc": "2.0", "id": 2, "method": "account/rateLimits/read", "params": null }),
-    ] {
-        if writeln!(stdin, "{request}").is_err() {
-            write_succeeded = false;
-            break;
-        }
-    }
-    if write_succeeded {
-        write_succeeded = stdin.flush().is_ok();
-    }
-    if !write_succeeded {
-        let _ = child.kill();
-        let _ = child.wait();
-        return None;
-    }
-
-    let (sender, receiver) = mpsc::sync_channel(1);
-    thread::spawn(move || {
-        let mut response = None;
-        for line in BufReader::new(stdout).lines().take(64) {
-            let Ok(line) = line else { break };
-            let Ok(message) = serde_json::from_str::<Value>(&line) else {
-                continue;
-            };
-            if message.get("id").and_then(Value::as_i64) == Some(2) {
-                response = message.get("result").cloned();
-                break;
-            }
-        }
-        let _ = sender.send(response);
-    });
-    let response = receiver.recv_timeout(Duration::from_secs(3)).ok().flatten();
-    let _ = child.kill();
-    let _ = child.wait();
-    response
-}
-
-#[cfg(windows)]
 fn load_codex_live() -> UsageCoreMetric {
-    let Some(executable) = newest_codex_executable() else {
+    let Some(auth_path) = codex_home().map(|home| home.join("auth.json")) else {
         return UsageCoreMetric::default();
     };
-    let Some(response) = request_codex_rate_limits(executable) else {
-        return UsageCoreMetric::default();
-    };
-    let rate_limits = response
-        .get("rateLimitsByLimitId")
-        .and_then(|limits| limits.get("codex"))
-        .or_else(|| response.get("rateLimits"));
-    let Some(sample) = rate_limits.and_then(|limits| extract_weekly(limits, unix_now())) else {
+    let Some(sample) = codex_live::load_sample(&auth_path, unix_now()) else {
         return UsageCoreMetric::default();
     };
     let mut history = load_codex_history_samples();
@@ -669,7 +573,6 @@ fn zcode_home() -> Option<PathBuf> {
         .map(PathBuf::from)
         .or_else(|| env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".zcode")))
 }
-
 
 struct ZCodeUsage {
     five_hour: UsageCoreMetric,
@@ -704,16 +607,38 @@ struct ZCodeLiveLimit {
     reset_at_unix_seconds: i64,
 }
 
+impl ZCodeLiveLimit {
+    // A pool cannot reset further out than its own window. z.ai has been seen
+    // reporting an anchor days beyond the five-hour horizon, which the plugin
+    // then displayed as "6d" next to the 5h percentage; keep the numbers but
+    // drop the impossible countdown ("--") instead.
+    fn with_bounded_reset(mut self, window: Duration) -> Self {
+        let horizon = unix_now() + (window + ZCODE_RESET_MARGIN).as_secs() as i64;
+        if self.reset_at_unix_seconds > horizon {
+            self.reset_at_unix_seconds = 0;
+        }
+        self
+    }
+}
+
 struct ZCodeLiveQuota {
-    five_hour: ZCodeLiveLimit,
-    week: ZCodeLiveLimit,
+    five_hour: Option<ZCodeLiveLimit>,
+    week: Option<ZCodeLiveLimit>,
 }
 
 fn read_live_limit(value: &Value) -> Option<ZCodeLiveLimit> {
+    let used_units = value.get("currentValue")?.as_i64()?;
+    let limit_units = value.get("usage")?.as_i64()?;
+    // z.ai sporadically omits `percentage`; the credit counts are always there.
+    let percentage = match value.get("percentage").and_then(Value::as_f64) {
+        Some(percentage) => percentage,
+        None if limit_units > 0 => used_units as f64 * 100.0 / limit_units as f64,
+        None => return None,
+    };
     Some(ZCodeLiveLimit {
-        percentage: value.get("percentage")?.as_f64()?,
-        used_units: value.get("currentValue")?.as_i64()?,
-        limit_units: value.get("usage")?.as_i64()?,
+        percentage,
+        used_units,
+        limit_units,
         reset_at_unix_seconds: value.get("nextResetTime")?.as_i64()? / 1000,
     })
 }
@@ -722,26 +647,28 @@ fn parse_zcode_quota(data: &str) -> Option<ZCodeLiveQuota> {
     let root = serde_json::from_str::<Value>(data).ok()?;
     let limits = root.get("data")?.get("limits")?.as_array()?;
     // unit 3 counts hours and number 5 selects the five-hour pool; unit 6
-    // spans one week. Fall back to the two smallest/largest pools when the
-    // server changes its units.
-    let mut parsed: Vec<(Value, ZCodeLiveLimit)> = limits
+    // spans one week. Each slot takes only its own pool: a missing or
+    // malformed five-hour entry must hide that row, not show weekly numbers
+    // on it.
+    let is_five_hour = |value: &Value| {
+        value.get("number").and_then(Value::as_i64) == Some(5)
+            || value.get("unit").and_then(Value::as_i64) == Some(3)
+    };
+    let five_hour = limits
         .iter()
-        .filter_map(|value| read_live_limit(value).map(|limit| (value.clone(), limit)))
-        .collect();
-    if parsed.is_empty() {
+        .filter(|value| is_five_hour(value))
+        .filter_map(read_live_limit)
+        .map(|limit| limit.with_bounded_reset(ZCODE_FIVE_HOUR_WINDOW))
+        .max_by_key(|limit| limit.limit_units);
+    let week = limits
+        .iter()
+        .filter(|value| !is_five_hour(value))
+        .filter_map(read_live_limit)
+        .map(|limit| limit.with_bounded_reset(ZCODE_WEEKLY_WINDOW))
+        .max_by_key(|limit| limit.limit_units);
+    if five_hour.is_none() && week.is_none() {
         return None;
     }
-    parsed.sort_by_key(|(_, limit)| limit.limit_units);
-    let five_hour = parsed
-        .iter()
-        .find(|(value, _)| value.get("number").and_then(Value::as_i64) == Some(5))
-        .map(|(_, limit)| *limit)
-        .unwrap_or(parsed[0].1);
-    let week = parsed
-        .iter()
-        .rev()
-        .find(|(value, _)| value.get("number").and_then(Value::as_i64) != Some(5))
-        .map(|(_, limit)| *limit)?;
     Some(ZCodeLiveQuota { five_hour, week })
 }
 
@@ -915,7 +842,12 @@ fn save_persisted_zcode_history(five_hour: &[Sample], seven_day: &[Sample], unit
         return;
     }
     let temporary = path.with_extension("json.tmp");
-    if fs::write(&temporary, persisted_zcode_history_json(five_hour, seven_day, units)).is_err() {
+    if fs::write(
+        &temporary,
+        persisted_zcode_history_json(five_hour, seven_day, units),
+    )
+    .is_err()
+    {
         return;
     }
     if fs::rename(&temporary, &path).is_err() {
@@ -931,34 +863,51 @@ fn load_zcode() -> ZCodeUsage {
     // fails, the last stored response stays on display until it goes stale.
     #[cfg(windows)]
     if let Some(quota) = fetch_zcode_live_quota() {
-        let five_hour_sample = Sample {
-            timestamp: now,
-            used: quota.five_hour.percentage,
-            reset_at: quota.five_hour.reset_at_unix_seconds,
+        let (persisted_five_hour, persisted_seven_day, persisted_units) =
+            load_persisted_zcode_history();
+        // A pool missing from this response keeps the previously stored
+        // samples, so its row ages out gracefully instead of jumping to
+        // another pool's numbers.
+        let five_hour_samples = match quota.five_hour {
+            Some(limit) => merge_zcode_samples(
+                persisted_five_hour,
+                vec![Sample {
+                    timestamp: now,
+                    used: limit.percentage,
+                    reset_at: limit.reset_at_unix_seconds,
+                }],
+                ZCODE_FIVE_HOUR_WINDOW,
+                ZCODE_MAX_PERSISTED_HISTORY_POINTS,
+            ),
+            None => persisted_five_hour,
         };
-        let seven_day_sample = Sample {
-            timestamp: now,
-            used: quota.week.percentage,
-            reset_at: quota.week.reset_at_unix_seconds,
+        let seven_day_samples = match quota.week {
+            Some(limit) => merge_zcode_samples(
+                persisted_seven_day,
+                vec![Sample {
+                    timestamp: now,
+                    used: limit.percentage,
+                    reset_at: limit.reset_at_unix_seconds,
+                }],
+                ZCODE_WEEKLY_WINDOW,
+                ZCODE_MAX_PERSISTED_HISTORY_POINTS,
+            ),
+            None => persisted_seven_day,
         };
-        let (persisted_five_hour, persisted_seven_day, _) = load_persisted_zcode_history();
-        let five_hour_samples = merge_zcode_samples(
-            persisted_five_hour,
-            vec![five_hour_sample],
-            ZCODE_FIVE_HOUR_WINDOW,
-            ZCODE_MAX_PERSISTED_HISTORY_POINTS,
-        );
-        let seven_day_samples = merge_zcode_samples(
-            persisted_seven_day,
-            vec![seven_day_sample],
-            ZCODE_WEEKLY_WINDOW,
-            ZCODE_MAX_PERSISTED_HISTORY_POINTS,
-        );
         let units = ZCodeUnits {
-            five_hour_used: quota.five_hour.used_units,
-            five_hour_limit: quota.five_hour.limit_units,
-            week_used: quota.week.used_units,
-            week_limit: quota.week.limit_units,
+            five_hour_used: quota
+                .five_hour
+                .map(|limit| limit.used_units)
+                .unwrap_or_default(),
+            five_hour_limit: quota
+                .five_hour
+                .map(|limit| limit.limit_units)
+                .unwrap_or_default(),
+            week_used: quota.week.map(|limit| limit.used_units).unwrap_or_default(),
+            week_limit: quota
+                .week
+                .map(|limit| limit.limit_units)
+                .unwrap_or_default(),
         };
         save_persisted_zcode_history(&five_hour_samples, &seven_day_samples, units);
         return ZCodeUsage {
@@ -972,7 +921,10 @@ fn load_zcode() -> ZCodeUsage {
                 now,
                 ZCODE_WEEKLY_FRESH_MAX_AGE,
             ),
-            next_reset_at: quota.five_hour.reset_at_unix_seconds,
+            next_reset_at: quota
+                .five_hour
+                .map(|limit| limit.reset_at_unix_seconds)
+                .unwrap_or_default(),
             five_hour_used_units: units.five_hour_used,
             five_hour_limit_units: units.five_hour_limit,
             seven_day_used_units: units.week_used,
@@ -1011,8 +963,8 @@ fn load_zcode() -> ZCodeUsage {
 }
 
 /// Writes a fixed-size snapshot into caller-owned memory. Claude is read from
-/// local application data. On Windows, Codex first asks the installed Codex
-/// app-server for an authenticated live snapshot; its fresh local JSONL data is
+/// local application data. On Windows, Codex reads authenticated usage over
+/// HTTPS with rustls without launching a subprocess; its fresh local JSONL data is
 /// used only if that request is unavailable. ZCode usage comes from the
 /// latest z.ai quota response, kept locally between requests.
 #[unsafe(no_mangle)]
@@ -1289,12 +1241,19 @@ mod tests {
         assert_eq!(claude_reset_from_record(&record, 3_000), None);
     }
 
-
     #[test]
     fn zcode_persisted_history_round_trips_with_units() {
         let json = persisted_zcode_history_json(
-            &[Sample { timestamp: 123, used: 18.0, reset_at: 456 }],
-            &[Sample { timestamp: 789, used: 24.0, reset_at: 0 }],
+            &[Sample {
+                timestamp: 123,
+                used: 18.0,
+                reset_at: 456,
+            }],
+            &[Sample {
+                timestamp: 789,
+                used: 24.0,
+                reset_at: 0,
+            }],
             ZCodeUnits {
                 five_hour_used: 285,
                 five_hour_limit: 12000,
@@ -1324,18 +1283,20 @@ mod tests {
 
         let quota = parse_zcode_quota(data).expect("quota");
 
-        assert_eq!(quota.five_hour.used_units, 1645);
-        assert_eq!(quota.five_hour.limit_units, 12000);
-        assert_eq!(quota.five_hour.percentage, 13.0);
-        assert_eq!(quota.five_hour.reset_at_unix_seconds, 1_789_540_647);
-        assert_eq!(quota.week.used_units, 13667);
-        assert_eq!(quota.week.limit_units, 60000);
-        assert_eq!(quota.week.percentage, 22.0);
-        assert_eq!(quota.week.reset_at_unix_seconds, 1_790_096_970);
+        let five_hour = quota.five_hour.expect("five hour");
+        assert_eq!(five_hour.used_units, 1645);
+        assert_eq!(five_hour.limit_units, 12000);
+        assert_eq!(five_hour.percentage, 13.0);
+        assert_eq!(five_hour.reset_at_unix_seconds, 1_789_540_647);
+        let week = quota.week.expect("week");
+        assert_eq!(week.used_units, 13667);
+        assert_eq!(week.limit_units, 60000);
+        assert_eq!(week.percentage, 22.0);
+        assert_eq!(week.reset_at_unix_seconds, 1_790_096_970);
     }
 
     #[test]
-    fn zcode_quota_response_with_unknown_units_falls_back_to_pool_size() {
+    fn zcode_quota_response_without_five_hour_pool_leaves_the_slot_empty() {
         let data = r#"{"code":200,"data":{"limits":[
             {"type":"CREDIT_LIMIT","unit":9,"number":4,"usage":60000,"currentValue":1,"remaining":59999,"percentage":1,"nextResetTime":2000000},
             {"type":"CREDIT_LIMIT","unit":9,"number":2,"usage":12000,"currentValue":2,"remaining":11998,"percentage":2,"nextResetTime":3000000}
@@ -1343,9 +1304,53 @@ mod tests {
 
         let quota = parse_zcode_quota(data).expect("quota");
 
-        // The smaller pool is treated as the five-hour window.
-        assert_eq!(quota.five_hour.used_units, 2);
-        assert_eq!(quota.week.used_units, 1);
+        // No pool is marked as the five-hour window, so the 5h slot stays
+        // empty instead of borrowing another pool's numbers.
+        assert!(quota.five_hour.is_none());
+        assert_eq!(quota.week.expect("week").used_units, 1);
+    }
+
+    #[test]
+    fn zcode_missing_five_hour_entry_is_not_replaced_by_the_weekly_pool() {
+        let data = r#"{"code":200,"data":{"limits":[
+            {"type":"CREDIT_LIMIT","unit":6,"number":1,"usage":140000,"currentValue":60624,"remaining":79375,"percentage":43,"nextResetTime":1791322367999}
+        ]}}"#;
+
+        let quota = parse_zcode_quota(data).expect("quota");
+
+        assert!(quota.five_hour.is_none());
+        assert_eq!(quota.week.expect("week").percentage, 43.0);
+    }
+
+    #[test]
+    fn zcode_reset_beyond_its_own_window_hides_the_countdown() {
+        let six_days_out_ms = (unix_now() + 6 * 24 * 60 * 60) * 1000;
+        let data = format!(
+            r#"{{"code":200,"data":{{"limits":[
+                {{"type":"CREDIT_LIMIT","unit":3,"number":5,"usage":28000,"currentValue":0,"remaining":28000,"percentage":0,"nextResetTime":{six_days_out_ms}}},
+                {{"type":"CREDIT_LIMIT","unit":6,"number":1,"usage":140000,"currentValue":60624,"remaining":79375,"percentage":43,"nextResetTime":{six_days_out_ms}}}
+            ]}}}}"#
+        );
+
+        let quota = parse_zcode_quota(&data).expect("quota");
+
+        // Six days is a legal weekly anchor but impossible for the five-hour
+        // window: keep the weekly countdown, drop the 5h one.
+        assert_eq!(quota.five_hour.expect("five hour").reset_at_unix_seconds, 0);
+        assert!(quota.week.expect("week").reset_at_unix_seconds > 0);
+    }
+
+    #[test]
+    fn zcode_missing_percentage_is_derived_from_credit_counts() {
+        let data = r#"{"code":200,"data":{"limits":[
+            {"type":"CREDIT_LIMIT","unit":3,"number":5,"usage":28000,"currentValue":7000,"remaining":21000,"nextResetTime":1790807478487}
+        ]}}"#;
+
+        let quota = parse_zcode_quota(data).expect("quota");
+
+        let five_hour = quota.five_hour.expect("five hour");
+        assert_eq!(five_hour.percentage, 25.0);
+        assert_eq!(five_hour.used_units, 7000);
     }
 
     #[test]
@@ -1359,10 +1364,22 @@ mod tests {
         let now = 10_000;
         let merged = merge_zcode_samples(
             vec![
-                Sample { timestamp: now - 600, used: 10.0, reset_at: 0 },
-                Sample { timestamp: now - 200, used: 20.0, reset_at: 0 },
+                Sample {
+                    timestamp: now - 600,
+                    used: 10.0,
+                    reset_at: 0,
+                },
+                Sample {
+                    timestamp: now - 200,
+                    used: 20.0,
+                    reset_at: 0,
+                },
             ],
-            vec![Sample { timestamp: now - 200, used: 40.0, reset_at: 0 }],
+            vec![Sample {
+                timestamp: now - 200,
+                used: 40.0,
+                reset_at: 0,
+            }],
             Duration::from_secs(300),
             1024,
         );
