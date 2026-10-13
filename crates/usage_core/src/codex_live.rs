@@ -1,5 +1,6 @@
 //! Read-only Codex usage polling. Never starts a CLI process or uses Windows SSPI.
-use super::{CODEX_RATE_LIMIT_MAX_AGE, Sample};
+use crate::codex::CODEX_RATE_LIMIT_MAX_AGE;
+use crate::history::Sample;
 use serde_json::Value;
 use std::fs::File;
 use std::io::Read;
