@@ -35,8 +35,9 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          $tag = "v${{ steps.version.outputs.version }}"
+          $tag = "v$env:RELEASE_VERSION"
           gh release view $tag --json tagName 2>$null
           if ($LASTEXITCODE -eq 0) {
             'exists=true' >> $env:GITHUB_OUTPUT
@@ -49,13 +50,16 @@ jobs:
       - name: Build release archive
         if: steps.release.outputs.exists == 'false'
         shell: pwsh
-        run: ./scripts/build-release.ps1 -Version ${{ steps.version.outputs.version }}
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: ./scripts/build-release.ps1 -Version $env:RELEASE_VERSION
       - name: Publish GitHub release
         if: steps.release.outputs.exists == 'false'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
           $assets = @(Get-ChildItem dist\*.zip, dist\*.sha256 | ForEach-Object FullName)
-          $tag = "v${{ steps.version.outputs.version }}"
+          $tag = "v$env:RELEASE_VERSION"
           gh release create $tag @assets --target $env:GITHUB_SHA --generate-notes --title "Better TrafficMonitor AI Usage $tag"
