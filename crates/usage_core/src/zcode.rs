@@ -19,6 +19,7 @@ fn zcode_home() -> Option<PathBuf> {
         .or_else(|| env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".zcode")))
 }
 
+#[derive(Default)]
 pub(crate) struct ZCodeUsage {
     pub(crate) five_hour: UsageCoreMetric,
     pub(crate) seven_day: UsageCoreMetric,
@@ -27,20 +28,6 @@ pub(crate) struct ZCodeUsage {
     pub(crate) five_hour_limit_units: i64,
     pub(crate) seven_day_used_units: i64,
     pub(crate) seven_day_limit_units: i64,
-}
-
-impl Default for ZCodeUsage {
-    fn default() -> Self {
-        Self {
-            five_hour: UsageCoreMetric::default(),
-            seven_day: UsageCoreMetric::default(),
-            next_reset_at: 0,
-            five_hour_used_units: 0,
-            five_hour_limit_units: 0,
-            seven_day_used_units: 0,
-            seven_day_limit_units: 0,
-        }
-    }
 }
 
 // The z.ai coding plan reports server-side credit pools per rolling window.

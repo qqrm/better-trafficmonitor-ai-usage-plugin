@@ -148,10 +148,10 @@ pub(crate) fn load_claude_next_reset(claude_data_dir: &Path) -> i64 {
             _ => parse_table_bytes(&data, &path).ok(),
         };
         for record in records.into_iter().flatten() {
-            if let Some(candidate) = claude_reset_from_record(&record, now) {
-                if newest.is_none_or(|current: (u64, i64)| candidate.0 > current.0) {
-                    newest = Some(candidate);
-                }
+            if let Some(candidate) = claude_reset_from_record(&record, now)
+                && newest.is_none_or(|current: (u64, i64)| candidate.0 > current.0)
+            {
+                newest = Some(candidate);
             }
         }
     }

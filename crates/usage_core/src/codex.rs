@@ -225,10 +225,10 @@ fn load_codex_history_samples() -> Vec<Sample> {
             if timestamp <= 0 {
                 continue;
             }
-            if let Some(rate_limits) = find_rate_limits(&event) {
-                if let Some(sample) = extract_weekly(rate_limits, timestamp) {
-                    samples.push(sample);
-                }
+            if let Some(rate_limits) = find_rate_limits(&event)
+                && let Some(sample) = extract_weekly(rate_limits, timestamp)
+            {
+                samples.push(sample);
             }
         }
     }

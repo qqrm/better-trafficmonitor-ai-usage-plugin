@@ -1,3 +1,4 @@
+#include <limits>
 #include "pch.h"
 #include "BetterTrafficMonitorAiUsagePlugin.h"
 #include "DisplayOptionsDialog.h"
@@ -140,7 +141,7 @@ int ZCodeLocalMinuteOfWeek()
         static_cast<long long>(ticks.QuadPart / 10000000ULL) - 11644473600LL;
     const int offset = g_zcode_peak_utc_offset_minutes.load(std::memory_order_relaxed);
     const long long local_seconds = unix_seconds + static_cast<long long>(offset) * 60;
-    return static_cast<int>(local_seconds / 60 % (7 * 1440));
+    return static_cast<int>((local_seconds / 60 + 4 * 1440) % (7 * 1440));
 }
 
 // Distance between two weekly positions on the 10080-minute circle.
@@ -472,6 +473,9 @@ void DrawTranslucentPolygon(CDC* pDC, const CRect& rect, const std::vector<POINT
         return;
 
     constexpr int ANTIALIAS_SCALE = 4;
+    if (rect.Width() > (std::numeric_limits<int>::max)() / ANTIALIAS_SCALE
+        || rect.Height() > (std::numeric_limits<int>::max)() / ANTIALIAS_SCALE)
+        return;
     DibSurface mask(pDC->GetSafeHdc(), rect.Width() * ANTIALIAS_SCALE, rect.Height() * ANTIALIAS_SCALE);
     DibSurface surface(pDC->GetSafeHdc(), rect.Width(), rect.Height());
     if (!mask.IsValid() || !surface.IsValid())
@@ -1334,7 +1338,7 @@ ITMPlugin::OptionReturn CBetterTrafficMonitorAiUsagePlugin::ShowOptionsDialog(vo
 
 const wchar_t* CBetterTrafficMonitorAiUsagePlugin::GetInfo(PluginInfoIndex index)
 {
-    static std::wstring value;
+    static thread_local std::wstring value;
     switch (index)
     {
     case TMI_NAME:
