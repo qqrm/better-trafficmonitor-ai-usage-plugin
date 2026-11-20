@@ -240,7 +240,7 @@ fn load_codex_history() -> UsageCoreMetric {
     {
         let mut samples = load_codex_history_samples();
         samples.extend(load_persisted_codex_history());
-        return codex_metric_from_samples(samples, unix_now());
+        codex_metric_from_samples(samples, unix_now())
     }
     #[cfg(not(windows))]
     codex_metric_from_samples(load_codex_history_samples(), unix_now())

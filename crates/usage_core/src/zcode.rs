@@ -300,7 +300,7 @@ pub(crate) fn load_zcode() -> ZCodeUsage {
     // fails, the last stored response stays on display until it goes stale.
     #[cfg(windows)]
     if let Some(quota) = fetch_zcode_live_quota() {
-        let (persisted_five_hour, persisted_seven_day, persisted_units) =
+        let (persisted_five_hour, persisted_seven_day, _persisted_units) =
             load_persisted_zcode_history();
         // A pool missing from this response keeps the previously stored
         // samples, so its row ages out gracefully instead of jumping to
@@ -347,7 +347,7 @@ pub(crate) fn load_zcode() -> ZCodeUsage {
                 .unwrap_or_default(),
         };
         save_persisted_zcode_history(&five_hour_samples, &seven_day_samples, units);
-        return ZCodeUsage {
+        ZCodeUsage {
             five_hour: metric_if_recent(
                 normalized_metric(five_hour_samples, ZCODE_FIVE_HOUR_WINDOW),
                 now,
@@ -377,7 +377,7 @@ pub(crate) fn load_zcode() -> ZCodeUsage {
             .last()
             .map(|sample| sample.reset_at)
             .unwrap_or_default();
-        return ZCodeUsage {
+        ZCodeUsage {
             five_hour: metric_if_recent(
                 normalized_metric(five_hour_samples, ZCODE_FIVE_HOUR_WINDOW),
                 now,
@@ -393,7 +393,7 @@ pub(crate) fn load_zcode() -> ZCodeUsage {
             five_hour_limit_units: units.five_hour_limit,
             seven_day_used_units: units.week_used,
             seven_day_limit_units: units.week_limit,
-        };
+        }
     }
     #[cfg(not(windows))]
     ZCodeUsage::default()
