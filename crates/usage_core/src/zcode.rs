@@ -366,7 +366,7 @@ pub(crate) fn load_zcode() -> ZCodeUsage {
             five_hour_limit_units: units.five_hour_limit,
             seven_day_used_units: units.week_used,
             seven_day_limit_units: units.week_limit,
-        };
+        }
     }
 
     // No fresh response this tick: keep showing the latest one we have.
