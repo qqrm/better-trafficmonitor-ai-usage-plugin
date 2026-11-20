@@ -347,7 +347,7 @@ pub(crate) fn load_zcode() -> ZCodeUsage {
                 .unwrap_or_default(),
         };
         save_persisted_zcode_history(&five_hour_samples, &seven_day_samples, units);
-        ZCodeUsage {
+        return ZCodeUsage {
             five_hour: metric_if_recent(
                 normalized_metric(five_hour_samples, ZCODE_FIVE_HOUR_WINDOW),
                 now,
@@ -366,7 +366,7 @@ pub(crate) fn load_zcode() -> ZCodeUsage {
             five_hour_limit_units: units.five_hour_limit,
             seven_day_used_units: units.week_used,
             seven_day_limit_units: units.week_limit,
-        }
+        };
     }
 
     // No fresh response this tick: keep showing the latest one we have.
@@ -377,7 +377,7 @@ pub(crate) fn load_zcode() -> ZCodeUsage {
             .last()
             .map(|sample| sample.reset_at)
             .unwrap_or_default();
-        ZCodeUsage {
+        return ZCodeUsage {
             five_hour: metric_if_recent(
                 normalized_metric(five_hour_samples, ZCODE_FIVE_HOUR_WINDOW),
                 now,
@@ -393,7 +393,7 @@ pub(crate) fn load_zcode() -> ZCodeUsage {
             five_hour_limit_units: units.five_hour_limit,
             seven_day_used_units: units.week_used,
             seven_day_limit_units: units.week_limit,
-        }
+        };
     }
     #[cfg(not(windows))]
     ZCodeUsage::default()
