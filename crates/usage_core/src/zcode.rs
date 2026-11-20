@@ -292,6 +292,7 @@ fn save_persisted_zcode_history(five_hour: &[Sample], seven_day: &[Sample], unit
     }
 }
 
+#[allow(clippy::needless_return)] // cfg(windows) early return is required for type checking
 pub(crate) fn load_zcode() -> ZCodeUsage {
     #[cfg(windows)]
     let now = unix_now();
