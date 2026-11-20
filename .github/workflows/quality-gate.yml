@@ -48,11 +48,16 @@ jobs:
         shell: pwsh
         run: cargo machete
 
-      - name: Install actionlint
-        uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2
-        with:
-          tool: actionlint
-
       - name: actionlint
         shell: pwsh
-        run: actionlint
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 6e7241b51e6817ea6a047693d8e6fed13b31819c9a0dd6c5a726e1592d22f6e9
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP actionlint.zip
+          Invoke-WebRequest -Uri "https://github.com/rhysd/actionlint/releases/download/v$env:ACTIONLINT_VERSION/actionlint_$env:ACTIONLINT_VERSION`_windows_amd64.zip" -OutFile $archive
+          $actual = (Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $env:ACTIONLINT_SHA256) { throw "actionlint checksum mismatch: $actual" }
+          $dest = Join-Path $env:RUNNER_TEMP actionlint-bin
+          Expand-Archive $archive -DestinationPath $dest -Force
+          & (Join-Path $dest actionlint.exe)
