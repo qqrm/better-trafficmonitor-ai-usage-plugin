@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "DisplayOptionsDialog.h"
+#include "usage_core.h"
 
 #include <cwchar>
 
@@ -10,38 +11,17 @@ void FormatMinuteOfDay(int minute, wchar_t* buffer, size_t capacity)
     swprintf_s(buffer, capacity, L"%02d:%02d", minute / 60, minute % 60);
 }
 
-// Accepts "9", "9:30", "09:00", "0930", with an optional sign for offsets
-// ("-4:30"). Returns the value in minutes, or fallback when unparseable.
-int ParseMinuteText(const wchar_t* text, int fallback)
-{
-    wchar_t* end = nullptr;
-    const long whole = wcstol(text, &end, 10);
-    if (end == text)
-        return fallback;
-    int minutes = static_cast<int>(whole * 60);
-    if (end != nullptr && (*end == L':' || *end == L'.') && end[0] != L'\0')
-    {
-        wchar_t* fraction_end = nullptr;
-        const long part = wcstol(end + 1, &fraction_end, 10);
-        if (fraction_end != end + 1)
-        {
-            const bool negative = whole < 0;
-            const int magnitude = static_cast<int>(part);
-            minutes = negative ? minutes - magnitude : minutes + magnitude;
-        }
-    }
-    return minutes;
-}
-
 int ReadMinuteEdit(const CDialog* dialog, int control_id, int fallback)
 {
     const CWnd* control = dialog->GetDlgItem(control_id);
     if (control == nullptr)
         return fallback;
     wchar_t text[32]{};
-    if (GetWindowTextW(control->GetSafeHwnd(), text, 32) <= 0)
+    const int length = GetWindowTextW(control->GetSafeHwnd(), text, 32);
+    if (length <= 0)
         return fallback;
-    return ParseMinuteText(text, fallback);
+    static_assert(sizeof(wchar_t) == sizeof(uint16_t));
+    return usage_core_parse_minutes(reinterpret_cast<const uint16_t*>(text), static_cast<uint32_t>(length), fallback);
 }
 
 void WriteMinuteEdit(CDialog* dialog, int control_id, int minute)
@@ -53,10 +33,8 @@ void WriteMinuteEdit(CDialog* dialog, int control_id, int minute)
 
 void WriteOffsetEdit(CDialog* dialog, int control_id, int offset_minutes)
 {
-    const int sign = offset_minutes < 0 ? -1 : 1;
-    const int magnitude = abs(offset_minutes);
     wchar_t buffer[16]{};
-    swprintf_s(buffer, L"%+03d:%02d", sign * (magnitude / 60), magnitude % 60);
+    usage_core_format_utc_offset(offset_minutes, reinterpret_cast<uint16_t*>(buffer), 16);
     dialog->SetDlgItemTextW(control_id, buffer);
 }
 }

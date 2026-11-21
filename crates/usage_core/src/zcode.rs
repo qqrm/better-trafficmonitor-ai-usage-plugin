@@ -19,6 +19,7 @@ fn zcode_home() -> Option<PathBuf> {
         .or_else(|| env::var_os("USERPROFILE").map(|home| PathBuf::from(home).join(".zcode")))
 }
 
+#[derive(Default)]
 pub(crate) struct ZCodeUsage {
     pub(crate) five_hour: UsageCoreMetric,
     pub(crate) seven_day: UsageCoreMetric,
@@ -27,20 +28,6 @@ pub(crate) struct ZCodeUsage {
     pub(crate) five_hour_limit_units: i64,
     pub(crate) seven_day_used_units: i64,
     pub(crate) seven_day_limit_units: i64,
-}
-
-impl Default for ZCodeUsage {
-    fn default() -> Self {
-        Self {
-            five_hour: UsageCoreMetric::default(),
-            seven_day: UsageCoreMetric::default(),
-            next_reset_at: 0,
-            five_hour_used_units: 0,
-            five_hour_limit_units: 0,
-            seven_day_used_units: 0,
-            seven_day_limit_units: 0,
-        }
-    }
 }
 
 // The z.ai coding plan reports server-side credit pools per rolling window.
@@ -305,6 +292,7 @@ fn save_persisted_zcode_history(five_hour: &[Sample], seven_day: &[Sample], unit
     }
 }
 
+#[allow(clippy::needless_return)] // cfg(windows) early return is required for type checking
 pub(crate) fn load_zcode() -> ZCodeUsage {
     #[cfg(windows)]
     let now = unix_now();
@@ -313,7 +301,7 @@ pub(crate) fn load_zcode() -> ZCodeUsage {
     // fails, the last stored response stays on display until it goes stale.
     #[cfg(windows)]
     if let Some(quota) = fetch_zcode_live_quota() {
-        let (persisted_five_hour, persisted_seven_day, persisted_units) =
+        let (persisted_five_hour, persisted_seven_day, _persisted_units) =
             load_persisted_zcode_history();
         // A pool missing from this response keeps the previously stored
         // samples, so its row ages out gracefully instead of jumping to

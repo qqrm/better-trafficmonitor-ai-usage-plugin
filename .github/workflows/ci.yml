@@ -13,19 +13,26 @@ jobs:
     # The plugin targets TrafficMonitor's v143/MFC toolchain. The moving
     # windows-latest image now uses Visual Studio 2026 without x64 MFC.
     runs-on: windows-2022
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
         with:
-          toolchain: stable
-      - name: Build and package
+          toolchain: 1.100.0
+      - name: Build, analyze and package
         shell: pwsh
-        run: ./scripts/build-release.ps1
+        run: ./scripts/build-release.ps1 -Analyze
+      - name: Load and exercise the packaged production DLL
+        shell: pwsh
+        run: ./scripts/test-native-dll.ps1
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
         with:
           name: BetterTrafficMonitorAiUsage-x64
           path: |
             dist/*.zip
             dist/*.sha256
+            artifacts/native-build/
+          if-no-files-found: error

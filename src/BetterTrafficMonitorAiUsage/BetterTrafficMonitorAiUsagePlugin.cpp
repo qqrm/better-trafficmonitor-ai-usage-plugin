@@ -1,4 +1,5 @@
 #include "pch.h"
+#include <limits>
 #include "BetterTrafficMonitorAiUsagePlugin.h"
 #include "DisplayOptionsDialog.h"
 #include "ProviderMarkAssets.h"
@@ -125,86 +126,30 @@ UsageDrawStyle GetZCodePeakDrawStyle(bool dark_mode)
         : UsageDrawStyle{ RGB(196, 40, 24), RGB(246, 232, 230), RGB(214, 148, 140), RGB(74, 16, 12), RGB(74, 16, 12), RGB(158, 96, 88), RGB(228, 192, 186) };
 }
 
-constexpr int ZCODE_PEAK_RAMP_MINUTES = 60;
+using ZCodePeakPosition = UsageCorePeakPosition;
 
-// Position on the weekly timeline, in minutes since Sunday 00:00 of the
-// configured time zone. January 1, 1970 was a Thursday: (days + 4) % 7 with
-// Sunday = 0.
-int ZCodeLocalMinuteOfWeek()
+ZCodePeakPosition ZCodePeakNow()
 {
     FILETIME file_time{};
     GetSystemTimeAsFileTime(&file_time);
     const ULARGE_INTEGER ticks{ { file_time.dwLowDateTime, file_time.dwHighDateTime } };
-    // Windows epoch (1601) to Unix epoch (1970): 11644473600 seconds.
     const long long unix_seconds =
         static_cast<long long>(ticks.QuadPart / 10000000ULL) - 11644473600LL;
-    const int offset = g_zcode_peak_utc_offset_minutes.load(std::memory_order_relaxed);
-    const long long local_seconds = unix_seconds + static_cast<long long>(offset) * 60;
-    return static_cast<int>(local_seconds / 60 % (7 * 1440));
-}
-
-// Distance between two weekly positions on the 10080-minute circle.
-int ZCodeWeekDistance(int from, int to)
-{
-    int delta = (to - from) % (7 * 1440);
-    if (delta < 0)
-        delta += 7 * 1440;
-    return delta;
-}
-
-struct ZCodePeakPosition
-{
-    bool inside{ false };
-    // 0 = far from the window (blue), 1 = inside it (red); the hour around
-    // each boundary ramps through violet so the approach is visible.
-    double intensity{};
-    int minutes_until_start{ -1 };
-    int minutes_until_end{ -1 };
-};
-
-ZCodePeakPosition ZCodePeakNow()
-{
-    ZCodePeakPosition result;
-    if (!g_zcode_peak_enabled.load(std::memory_order_relaxed))
-        return result;
-    const int start = g_zcode_peak_start_minute.load(std::memory_order_relaxed);
-    const int end = g_zcode_peak_end_minute.load(std::memory_order_relaxed);
-    const int length = (end - start + 1440) % 1440;
-    if (length == 0)
-        return result;
-
-    const int now = ZCodeLocalMinuteOfWeek();
-    const bool weekdays_only = g_zcode_peak_weekdays_only.load(std::memory_order_relaxed);
-    const int first_day = weekdays_only ? 1 : 0; // Monday or Sunday
-    const int day_count = weekdays_only ? 5 : 7;
-
-    int best_to_start = 7 * 1440;
-    int best_to_end = 7 * 1440;
-    for (int day = first_day; day < first_day + day_count; ++day)
-    {
-        const int window_start = (day * 1440 + start) % (7 * 1440);
-        const int window_end = window_start + length;
-        if (now >= window_start && now < window_end)
-            result.inside = true;
-        best_to_start = min(best_to_start, ZCodeWeekDistance(now, window_start));
-        best_to_end = min(best_to_end, ZCodeWeekDistance(now, window_end));
-    }
-    result.minutes_until_start = best_to_start;
-    result.minutes_until_end = best_to_end;
-    if (result.inside)
-        result.intensity = 1.0;
-    else
-    {
-        const int nearest = min(best_to_start, best_to_end);
-        if (nearest < ZCODE_PEAK_RAMP_MINUTES)
-            result.intensity = 1.0 - static_cast<double>(nearest) / ZCODE_PEAK_RAMP_MINUTES;
-    }
+    const UsageCorePeakSettings settings{
+        g_zcode_peak_enabled.load(std::memory_order_relaxed) ? 1 : 0,
+        g_zcode_peak_start_minute.load(std::memory_order_relaxed),
+        g_zcode_peak_end_minute.load(std::memory_order_relaxed),
+        g_zcode_peak_utc_offset_minutes.load(std::memory_order_relaxed),
+        g_zcode_peak_weekdays_only.load(std::memory_order_relaxed) ? 1 : 0,
+    };
+    ZCodePeakPosition result{ 0, -1, -1, 0, 0.0 };
+    usage_core_peak_position(unix_seconds, &settings, &result);
     return result;
 }
 
 bool IsZCodePeakHours()
 {
-    return ZCodePeakNow().inside;
+    return ZCodePeakNow().inside != 0;
 }
 
 COLORREF LerpColor(COLORREF from, COLORREF to, double t)
@@ -242,10 +187,12 @@ std::wstring FormatZCodePeakStatus()
     // Credit-cost multipliers published by z.ai for the current rate period.
     const wchar_t* glm_rate = position.inside ? L"x3" : L"x1";
     const wchar_t* flash_rate = position.inside ? L"x1.2" : L"x0.4";
+    wchar_t offset_text[16]{};
+    static_assert(sizeof(wchar_t) == sizeof(uint16_t));
+    usage_core_format_utc_offset(offset, reinterpret_cast<uint16_t*>(offset_text), 16);
     wchar_t window[64]{};
-    swprintf_s(window, L"%02d:%02d-%02d:%02d UTC%+03d:%02d, %ls",
-        start / 60, start % 60, end / 60, end % 60,
-        offset / 60, abs(offset) % 60,
+    swprintf_s(window, L"%02d:%02d-%02d:%02d UTC%ls, %ls",
+        start / 60, start % 60, end / 60, end % 60, offset_text,
         g_zcode_peak_weekdays_only.load(std::memory_order_relaxed) ? L"weekdays" : L"daily");
     wchar_t buffer[160]{};
     if (position.inside)
@@ -472,6 +419,9 @@ void DrawTranslucentPolygon(CDC* pDC, const CRect& rect, const std::vector<POINT
         return;
 
     constexpr int ANTIALIAS_SCALE = 4;
+    if (rect.Width() > (std::numeric_limits<int>::max)() / ANTIALIAS_SCALE
+        || rect.Height() > (std::numeric_limits<int>::max)() / ANTIALIAS_SCALE)
+        return;
     DibSurface mask(pDC->GetSafeHdc(), rect.Width() * ANTIALIAS_SCALE, rect.Height() * ANTIALIAS_SCALE);
     DibSurface surface(pDC->GetSafeHdc(), rect.Width(), rect.Height());
     if (!mask.IsValid() || !surface.IsValid())
@@ -1334,7 +1284,7 @@ ITMPlugin::OptionReturn CBetterTrafficMonitorAiUsagePlugin::ShowOptionsDialog(vo
 
 const wchar_t* CBetterTrafficMonitorAiUsagePlugin::GetInfo(PluginInfoIndex index)
 {
-    static std::wstring value;
+    static thread_local std::wstring value;
     switch (index)
     {
     case TMI_NAME:
@@ -1350,7 +1300,7 @@ const wchar_t* CBetterTrafficMonitorAiUsagePlugin::GetInfo(PluginInfoIndex index
         value = L"Copyright (C) 2026 Better TrafficMonitor AI Usage contributors";
         break;
     case TMI_VERSION:
-        value = L"1.8.3";
+        value = L"1.8.4";
         break;
     case TMI_URL:
         value = L"https://github.com/qqrm/better-trafficmonitor-ai-usage-plugin";
@@ -1364,16 +1314,19 @@ const wchar_t* CBetterTrafficMonitorAiUsagePlugin::GetInfo(PluginInfoIndex index
 
 const wchar_t* CBetterTrafficMonitorAiUsagePlugin::GetTooltipInfo()
 {
-    g_usage_core.RefreshIfNeeded();
-
+    // Only DataRequired polls sources. UI callbacks read one cached snapshot.
+    const UsageCoreSnapshot snapshot = g_usage_core.GetSnapshot();
+    const auto metric = [](const UsageCoreMetric& source) {
+        return UsageMetric{ source.available != 0, source.used_percentage, source.reset_at_unix_seconds };
+    };
     const bool show_claude = g_show_claude.load(std::memory_order_relaxed);
     const bool show_codex = g_show_codex.load(std::memory_order_relaxed);
     const bool show_zcode = g_show_zcode.load(std::memory_order_relaxed);
     m_tooltip_text_cache.clear();
     if (show_claude)
     {
-        const UsageMetric claude_five_hour = g_usage_core.GetMetric(UsageWindow::Claude5h);
-        const UsageMetric claude_seven_day = g_usage_core.GetMetric(UsageWindow::Claude7d);
+        const UsageMetric claude_five_hour = metric(snapshot.claude_5h);
+        const UsageMetric claude_seven_day = metric(snapshot.claude_7d);
         if (g_claude_weekly_first.load(std::memory_order_relaxed))
         {
             m_tooltip_text_cache = L"Claude 7d: " + FormatLimitDetails(claude_seven_day);
@@ -1384,27 +1337,27 @@ const wchar_t* CBetterTrafficMonitorAiUsagePlugin::GetTooltipInfo()
             m_tooltip_text_cache = L"Claude 5h: " + FormatLimitDetails(claude_five_hour);
             m_tooltip_text_cache += L"\nClaude 7d: " + FormatLimitDetails(claude_seven_day);
         }
-        m_tooltip_text_cache += L"\nClaude next reset: " + FormatResetTime(g_usage_core.GetClaudeNextResetAtUnixSeconds());
+        m_tooltip_text_cache += L"\nClaude next reset: " + FormatResetTime(snapshot.claude_next_reset_at_unix_seconds);
     }
     if (show_codex)
     {
-        const UsageMetric codex_seven_day = g_usage_core.GetMetric(UsageWindow::Codex7d);
+        const UsageMetric codex_seven_day = metric(snapshot.codex_7d);
         if (!m_tooltip_text_cache.empty())
             m_tooltip_text_cache += L"\n\n";
         m_tooltip_text_cache += L"Codex 7d: " + FormatLimitDetails(codex_seven_day) + L"; resets: " + FormatResetTime(codex_seven_day.reset_at_unix_seconds);
     }
     if (show_zcode)
     {
-        const UsageMetric zcode_five_hour = g_usage_core.GetMetric(UsageWindow::ZCode5h);
-        const UsageMetric zcode_seven_day = g_usage_core.GetMetric(UsageWindow::ZCode7d);
+        const UsageMetric zcode_five_hour = metric(snapshot.zcode_5h);
+        const UsageMetric zcode_seven_day = metric(snapshot.zcode_7d);
         if (!m_tooltip_text_cache.empty())
             m_tooltip_text_cache += L"\n\n";
         m_tooltip_text_cache += L"ZCode 7d: " + FormatZCodeLimitDetails(
-            zcode_seven_day, g_usage_core.GetZCodeUsedUnits(UsageWindow::ZCode7d), g_usage_core.GetZCodeLimitUnits(UsageWindow::ZCode7d));
+            zcode_seven_day, snapshot.zcode_7d_used_units, snapshot.zcode_7d_limit_units);
         m_tooltip_text_cache += L"\nZCode 5h: " + FormatZCodeLimitDetails(
-            zcode_five_hour, g_usage_core.GetZCodeUsedUnits(UsageWindow::ZCode5h), g_usage_core.GetZCodeLimitUnits(UsageWindow::ZCode5h));
+            zcode_five_hour, snapshot.zcode_5h_used_units, snapshot.zcode_5h_limit_units);
         m_tooltip_text_cache += L"\nZCode 7d resets: " + FormatResetTime(zcode_seven_day.reset_at_unix_seconds);
-        m_tooltip_text_cache += L"\nZCode 5h resets: " + FormatResetTime(g_usage_core.GetZCodeNextResetAtUnixSeconds());
+        m_tooltip_text_cache += L"\nZCode 5h resets: " + FormatResetTime(snapshot.zcode_next_reset_at_unix_seconds);
         m_tooltip_text_cache += L"\nZCode rates: " + FormatZCodePeakStatus();
     }
     if (m_tooltip_text_cache.empty())

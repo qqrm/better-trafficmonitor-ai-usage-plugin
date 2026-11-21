@@ -1,0 +1,12 @@
+[package]
+name = "native_contract_tests"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "MIT"
+
+[dev-dependencies]
+usage_core = { version = "=1.8.4", path = "../usage_core" }
+
+[build-dependencies]
+cc = "1"

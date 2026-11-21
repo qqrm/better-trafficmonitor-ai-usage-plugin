@@ -3,7 +3,6 @@ use crate::UsageCoreMetric;
 #[cfg(windows)]
 use crate::codex_live;
 use crate::history::{Sample, metric_if_recent, normalized_metric, normalized_samples, unix_now};
-use chrono::DateTime;
 use serde_json::Value;
 use std::{
     env,
@@ -12,6 +11,7 @@ use std::{
     path::{Path, PathBuf},
     time::Duration,
 };
+use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
 pub(crate) const CODEX_RATE_LIMIT_MAX_AGE: Duration = Duration::from_secs(20 * 60);
 const CODEX_HISTORY_WINDOW: Duration = Duration::from_secs(7 * 24 * 60 * 60);
@@ -53,8 +53,8 @@ fn collect_jsonl(root: &Path, files: &mut Vec<PathBuf>, entries_seen: &mut usize
 fn parse_rfc3339_seconds(value: Option<&Value>) -> i64 {
     value
         .and_then(Value::as_str)
-        .and_then(|text| DateTime::parse_from_rfc3339(text).ok())
-        .map(|time| time.timestamp())
+        .and_then(|text| OffsetDateTime::parse(text, &Rfc3339).ok())
+        .map(|time| time.unix_timestamp())
         .unwrap_or_default()
 }
 
@@ -225,10 +225,10 @@ fn load_codex_history_samples() -> Vec<Sample> {
             if timestamp <= 0 {
                 continue;
             }
-            if let Some(rate_limits) = find_rate_limits(&event) {
-                if let Some(sample) = extract_weekly(rate_limits, timestamp) {
-                    samples.push(sample);
-                }
+            if let Some(rate_limits) = find_rate_limits(&event)
+                && let Some(sample) = extract_weekly(rate_limits, timestamp)
+            {
+                samples.push(sample);
             }
         }
     }
@@ -240,7 +240,7 @@ fn load_codex_history() -> UsageCoreMetric {
     {
         let mut samples = load_codex_history_samples();
         samples.extend(load_persisted_codex_history());
-        return codex_metric_from_samples(samples, unix_now());
+        codex_metric_from_samples(samples, unix_now())
     }
     #[cfg(not(windows))]
     codex_metric_from_samples(load_codex_history_samples(), unix_now())
@@ -289,6 +289,38 @@ pub(crate) fn load_codex() -> UsageCoreMetric {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn rfc3339_timestamps_preserve_offsets_and_fractional_seconds() {
+        for text in [
+            "2024-01-01T00:00:00Z",
+            "2024-01-01T00:00:00.987654321Z",
+            "2024-01-01T03:00:00+03:00",
+            "2023-12-31T23:30:00-00:30",
+        ] {
+            assert_eq!(parse_rfc3339_seconds(Some(&json!(text))), 1_704_067_200);
+        }
+        assert_eq!(
+            parse_rfc3339_seconds(Some(&json!("1969-12-31T23:59:59.5Z"))),
+            -1
+        );
+    }
+
+    #[test]
+    fn invalid_rfc3339_timestamps_do_not_become_fresh_data() {
+        for value in [
+            Value::Null,
+            json!(1_704_067_200),
+            json!("2024-02-30T00:00:00Z"),
+            json!("2024-01-01T00:00:00+24:00"),
+            json!("2024-01-01T00:00:00Z trailing"),
+            json!("not a timestamp"),
+        ] {
+            assert_eq!(parse_rfc3339_seconds(Some(&value)), 0);
+        }
+        assert_eq!(parse_rfc3339_seconds(None), 0);
+    }
+
     #[test]
     fn codex_uses_only_the_latest_fresh_rate_limit_update() {
         let now = 2_000_000;

@@ -3,7 +3,10 @@ mod codex;
 #[cfg(any(windows, test))]
 mod codex_live;
 mod history;
+mod time_logic;
 mod zcode;
+
+pub use time_logic::{UsageCorePeakPosition, UsageCorePeakSettings};
 
 use claude::{load_claude, load_claude_next_reset, newest_claude_cache};
 use codex::load_codex;
@@ -66,6 +69,8 @@ pub struct UsageCoreSnapshot {
 /// used only if that request is unavailable. ZCode usage comes from the
 /// latest z.ai quota response, kept locally between requests.
 #[unsafe(no_mangle)]
+/// # Safety
+/// `out` must be a valid, writable pointer to a `UsageCoreSnapshot`.
 pub unsafe extern "C" fn usage_core_refresh(out: *mut UsageCoreSnapshot) -> i32 {
     if out.is_null() {
         return 0;
