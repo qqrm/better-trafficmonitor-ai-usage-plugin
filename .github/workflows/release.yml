@@ -1,9 +1,7 @@
 name: Release
 
 on:
-  workflow_run:
-    workflows: [CI, quality-gate, CodeQL]
-    types: [completed]
+  push:
     branches: [main]
 
 permissions:
@@ -16,13 +14,9 @@ concurrency:
 
 jobs:
   gates:
-    if: >-
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'main' &&
-      github.event.workflow_run.head_repository.id == github.event.repository.id &&
-      github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 30
     outputs:
       ready: ${{ steps.gates.outputs.ready }}
       source_sha: ${{ steps.gates.outputs.source_sha }}
@@ -36,28 +30,39 @@ jobs:
         with:
           script: |
             const { owner, repo } = context.repo;
-            const trigger = context.payload.workflow_run;
             const repositoryId = context.payload.repository.id;
-            if (trigger.event !== 'push' || trigger.head_branch !== 'main' ||
-                trigger.head_repository?.id !== repositoryId || trigger.conclusion !== 'success' ||
-                !/^[a-f0-9]{40}$/.test(trigger.head_sha)) {
-              throw new Error('Only successful main pushes from this repository can release');
+            const sha = context.sha;
+            if (context.eventName !== 'push' || context.ref !== 'refs/heads/main' ||
+                context.payload.repository.full_name !== `${owner}/${repo}` || context.payload.deleted ||
+                context.payload.after !== sha || !/^[a-f0-9]{40}$/.test(sha)) {
+              throw new Error('Only main pushes from this repository can release');
             }
             core.setOutput('ready', 'false');
-            const runs = {};
-            for (const workflow of ['ci.yml', 'quality-gate.yml', 'codeql.yml']) {
-              const candidates = await github.paginate(github.rest.actions.listWorkflowRuns, {
-                owner, repo, workflow_id: workflow, head_sha: trigger.head_sha,
-                event: 'push', branch: 'main', per_page: 100,
-              });
-              const latest = candidates.filter(run => run.head_sha === trigger.head_sha &&
-                run.event === 'push' && run.head_branch === 'main' &&
-                run.head_repository?.id === repositoryId).sort((a, b) => b.id - a.id)[0];
-              if (!latest || latest.status !== 'completed' || latest.conclusion !== 'success') {
-                core.notice(`Waiting for ${workflow} to succeed on ${trigger.head_sha}`);
-                return;
+            const workflows = ['ci.yml', 'quality-gate.yml', 'codeql.yml', 'workflow-security.yml', 'gitleaks.yml'];
+            const deadline = Date.now() + 25 * 60 * 1000;
+            let runs;
+            for (;;) {
+              runs = {};
+              const waiting = [];
+              for (const workflow of workflows) {
+                const candidates = await github.paginate(github.rest.actions.listWorkflowRuns, {
+                  owner, repo, workflow_id: workflow, head_sha: sha, event: 'push', branch: 'main', per_page: 100,
+                });
+                const latest = candidates.filter(run => run.head_sha === sha && run.event === 'push' &&
+                  run.head_branch === 'main' && run.head_repository?.id === repositoryId)
+                  .sort((a, b) => b.id - a.id)[0];
+                if (!latest || latest.status !== 'completed') {
+                  waiting.push(workflow);
+                } else if (latest.conclusion !== 'success') {
+                  throw new Error(`Gate did not succeed: ${workflow} (${latest.conclusion})`);
+                } else {
+                  runs[workflow] = latest.id;
+                }
               }
-              runs[workflow] = latest.id;
+              if (waiting.length === 0) break;
+              if (Date.now() >= deadline) throw new Error(`Release gates timed out: ${waiting.join(', ')}`);
+              core.info(`Waiting for ${waiting.join(', ')} on ${sha}`);
+              await new Promise(resolve => setTimeout(resolve, 15000));
             }
             const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
               owner, repo, run_id: runs['ci.yml'], per_page: 100,
@@ -67,12 +72,12 @@ jobs:
             if (matches.length !== 1) throw new Error('Expected exactly one unexpired CI package artifact');
             const artifact = matches[0];
             if (artifact.workflow_run?.id !== runs['ci.yml'] ||
-                artifact.workflow_run?.head_sha !== trigger.head_sha ||
+                artifact.workflow_run?.head_sha !== sha ||
                 artifact.workflow_run?.head_repository_id !== repositoryId ||
                 !/^sha256:[a-f0-9]{64}$/.test(artifact.digest || '')) {
               throw new Error('CI artifact provenance or digest is missing or inconsistent');
             }
-            core.setOutput('source_sha', trigger.head_sha);
+            core.setOutput('source_sha', sha);
             core.setOutput('runs', JSON.stringify(runs));
             core.setOutput('artifact_id', artifact.id);
             core.setOutput('artifact_digest', artifact.digest);
@@ -193,7 +198,7 @@ jobs:
             const runs = JSON.parse(process.env.GATE_RUNS);
             const repositoryId = context.payload.repository.id;
             const requireGates = async () => {
-              for (const workflow of ['ci.yml', 'quality-gate.yml', 'codeql.yml']) {
+              for (const workflow of ['ci.yml', 'quality-gate.yml', 'codeql.yml', 'workflow-security.yml', 'gitleaks.yml']) {
                 const candidates = await github.paginate(github.rest.actions.listWorkflowRuns, {
                   owner, repo, workflow_id: workflow, head_sha: sha, event: 'push', branch: 'main', per_page: 100,
                 });

@@ -1,7 +1,12 @@
 #pragma once
 
 #include "UsageCoreAdapter.h"
+// Upstream ABI stubs intentionally name unused parameters. Keep this exception
+// limited to that unchanged vendor header; all plugin code retains /W4 /WX.
+#pragma warning(push)
+#pragma warning(disable: 4100)
 #include "PluginInterface.h"
+#pragma warning(pop)
 
 class CClaudeUsageItem : public IPluginItem
 {

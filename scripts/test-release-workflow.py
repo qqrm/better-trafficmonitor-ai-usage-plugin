@@ -40,24 +40,26 @@ scripts = inline_blocks('          script: |', 12)
 validators = inline_blocks('        run: |', 10)
 assert len(scripts) == 3 and len(validators) == 1, 'Workflow layout changed: update extraction explicitly'
 assert 'actions/checkout@' not in WORKFLOW and 'build-release.ps1' not in WORKFLOW
-assert 'workflows: [CI, quality-gate, CodeQL]' in WORKFLOW
-assert "github.event.workflow_run.head_repository.id == github.event.repository.id" in WORKFLOW
+assert '  push:\n    branches: [main]' in WORKFLOW and '  workflow_run:' not in WORKFLOW
+assert "github.event_name == 'push' && github.ref == 'refs/heads/main'" in WORKFLOW
 
 NODE_TESTS = r'''
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const sources = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));
 const run = source => new Function('github', 'context', 'core', 'require', 'process',
+  'Date = globalThis.Date', 'setTimeout = globalThis.setTimeout',
   `return (async () => {${source}\n})();`);
 const execute = sources.map(run);
 const sha = 'a'.repeat(40);
-const workflows = ['ci.yml', 'quality-gate.yml', 'codeql.yml'];
+const workflows = ['ci.yml', 'quality-gate.yml', 'codeql.yml', 'workflow-security.yml', 'gitleaks.yml'];
 const absent = async () => { throw Object.assign(new Error('absent'), { status: 404 }); };
 let passed = 0;
 function fixture() {
   const context = { repo: { owner: 'qqrm', repo: 'better-trafficmonitor-ai-usage-plugin' },
-    payload: { repository: { id: 77 }, workflow_run: { event: 'push', head_branch: 'main',
-      head_sha: sha, head_repository: { id: 77 }, conclusion: 'success' } } };
+    eventName: 'push', ref: 'refs/heads/main', sha,
+    payload: { repository: { id: 77, full_name: 'qqrm/better-trafficmonitor-ai-usage-plugin' },
+      after: sha, deleted: false } };
   const runs = Object.fromEntries(workflows.map((workflow, index) => [workflow, [{
     id: 100 + index, head_sha: sha, event: 'push', head_branch: 'main', head_repository: { id: 77 },
     status: 'completed', conclusion: 'success',
@@ -73,21 +75,24 @@ function fixture() {
     updateRelease: async args => { mutations.push(['publish', args]); return { data: {} }; },
   } }, paginate: async (method, args) => method === actions.listWorkflowRuns ?
     structuredClone(runs[args.workflow_id]) : structuredClone(artifacts) };
-  const core = { setOutput: (name, value) => { outputs[name] = value; }, notice() {} };
+  const core = { setOutput: (name, value) => { outputs[name] = value; }, notice() {}, info() {} };
   const env = { SOURCE_SHA: sha, RELEASE_VERSION: '1.8.4', RUNNER_TEMP: '/unused',
     GATE_RUNS: JSON.stringify(Object.fromEntries(workflows.map((workflow, index) => [workflow, 100 + index]))) };
   const mockRequire = name => name === 'node:fs' ? { readFileSync: () => Buffer.from('verified asset') } : require(name);
-  return { context, runs, artifacts, outputs, mutations, github, core, env, mockRequire };
+  let now = 0;
+  const clock = { now: () => now };
+  const sleep = callback => { now += 25 * 60 * 1000; callback(); };
+  return { context, runs, artifacts, outputs, mutations, github, core, env, mockRequire, clock, sleep };
 }
-async function gate(f) { await execute[0](f.github, f.context, f.core, require, { env: f.env }); }
+async function gate(f) { await execute[0](f.github, f.context, f.core, require, { env: f.env }, f.clock, f.sleep); }
 async function publish(f) { await execute[2](f.github, f.context, f.core, f.mockRequire, { env: f.env }); }
 (async () => {
   const valid = fixture(); await gate(valid); assert.equal(valid.outputs.ready, 'true'); passed++;
   for (const [name, change] of [
-    ['pull request trigger', f => { f.context.payload.workflow_run.event = 'pull_request'; }],
-    ['fork trigger', f => { f.context.payload.workflow_run.head_repository.id = 99; }],
-    ['non-main trigger', f => { f.context.payload.workflow_run.head_branch = 'feature'; }],
-    ['failed trigger', f => { f.context.payload.workflow_run.conclusion = 'failure'; }],
+    ['pull request trigger', f => { f.context.eventName = 'pull_request'; }],
+    ['different repository trigger', f => { f.context.payload.repository.full_name = 'someone/fork'; }],
+    ['non-main trigger', f => { f.context.ref = 'refs/heads/feature'; }],
+    ['branch deletion trigger', f => { f.context.payload.deleted = true; }],
     ['expired artifact', f => { f.artifacts[0].expired = true; }],
     ['ambiguous artifact', f => { f.artifacts.push(structuredClone(f.artifacts[0])); }],
     ['wrong artifact run', f => { f.artifacts[0].workflow_run.id = 101; }],
@@ -106,8 +111,15 @@ async function publish(f) { await execute[2](f.github, f.context, f.core, f.mock
     ['pull-request success only', f => { f.runs['ci.yml'][0].event = 'pull_request'; }],
     ['newer failed run', f => { f.runs['ci.yml'].push({ ...f.runs['ci.yml'][0], id: 999, conclusion: 'failure' }); }],
   ]) {
-    const f = fixture(); change(f); await gate(f); assert.equal(f.outputs.ready, 'false', name); passed++;
+    const f = fixture(); change(f); await assert.rejects(gate(f), undefined, name);
+    assert.equal(f.outputs.ready, 'false', name); passed++;
   }
+  const pending = fixture(); pending.runs['ci.yml'][0].status = 'in_progress';
+  pending.sleep = callback => { pending.runs['ci.yml'][0].status = 'completed'; callback(); };
+  await gate(pending); assert.equal(pending.outputs.ready, 'true'); passed++;
+  const timeout = fixture(); timeout.runs['ci.yml'] = [];
+  await assert.rejects(gate(timeout), /Release gates timed out/);
+  assert.equal(timeout.outputs.ready, 'false'); passed++;
   for (const [name, change] of [
     ['gate failed before publish', f => { f.runs['codeql.yml'][0].conclusion = 'failure'; }],
     ['gate rerun pending', f => { f.runs['ci.yml'][0].status = 'queued'; }],
