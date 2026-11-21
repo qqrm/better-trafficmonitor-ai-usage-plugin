@@ -63,7 +63,7 @@ struct Canvas
     void Create()
     {
         dc = CreateCompatibleDC(nullptr);
-        Require(dc != nullptr, "CreateCompatibleDC failed");
+        if (dc == nullptr) throw std::runtime_error("CreateCompatibleDC failed");
         BITMAPINFO info{};
         info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
         info.bmiHeader.biWidth = width;
@@ -73,10 +73,13 @@ struct Canvas
         info.bmiHeader.biCompression = BI_RGB;
         void* memory = nullptr;
         bitmap = CreateDIBSection(dc, &info, DIB_RGB_COLORS, &memory, nullptr, 0);
-        Require(bitmap != nullptr && memory != nullptr, "CreateDIBSection failed");
+        if (bitmap == nullptr || memory == nullptr)
+            throw std::runtime_error("CreateDIBSection failed");
         pixels = static_cast<DWORD*>(memory);
-        previous = SelectObject(dc, bitmap);
-        Require(previous != nullptr && previous != HGDI_ERROR, "SelectObject failed");
+        const HGDIOBJ selected = SelectObject(dc, bitmap);
+        if (selected == nullptr || selected == HGDI_ERROR)
+            throw std::runtime_error("SelectObject failed");
+        previous = selected;
     }
 };
 

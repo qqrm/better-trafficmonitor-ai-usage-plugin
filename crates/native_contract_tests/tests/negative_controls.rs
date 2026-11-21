@@ -133,8 +133,11 @@ fn named_behavioral_mutations_are_detected() -> io::Result<()> {
     for mutation in MUTATIONS {
         let path = source.join(mutation.file);
         let original = fs::read_to_string(&path)?;
+        // Git may check out CRLF on Windows; match source semantics independently
+        // of checkout line endings, and restore the exact original bytes below.
+        let normalized = original.replace("\r\n", "\n");
         assert_eq!(
-            original.matches(mutation.before).count(),
+            normalized.matches(mutation.before).count(),
             1,
             "{}: production anchor changed",
             mutation.name
@@ -153,7 +156,10 @@ fn named_behavioral_mutations_are_detected() -> io::Result<()> {
             text
         );
 
-        fs::write(&path, original.replacen(mutation.before, mutation.after, 1))?;
+        fs::write(
+            &path,
+            normalized.replacen(mutation.before, mutation.after, 1),
+        )?;
         let compile = cargo(&source, &build, mutation.package, None)?;
         let compile_text = save_output(
             &evidence.join(format!("{}-compile.log", mutation.name)),
