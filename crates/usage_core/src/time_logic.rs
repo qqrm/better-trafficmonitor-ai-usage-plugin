@@ -224,6 +224,194 @@ mod tests {
         }
     }
 
+    fn public_peak_position(
+        unix_seconds: i64,
+        settings: UsageCorePeakSettings,
+    ) -> UsageCorePeakPosition {
+        #[repr(C)]
+        struct Guarded {
+            before: u64,
+            position: UsageCorePeakPosition,
+            after: u64,
+        }
+        let mut guarded = Guarded {
+            before: 0x1234_5678_9abc_def0,
+            position: UsageCorePeakPosition {
+                inside: 99,
+                minutes_until_start: 99,
+                minutes_until_end: 99,
+                reserved: 99,
+                intensity: f64::NAN,
+            },
+            after: 0xfedc_ba98_7654_3210,
+        };
+        assert_eq!(
+            unsafe { usage_core_peak_position(unix_seconds, &settings, &mut guarded.position) },
+            1,
+            "valid public peak call must report success"
+        );
+        assert_eq!(guarded.before, 0x1234_5678_9abc_def0);
+        assert_eq!(guarded.after, 0xfedc_ba98_7654_3210);
+        guarded.position
+    }
+
+    #[test]
+    fn public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity() {
+        let weekday = settings(9 * 60, 13 * 60, true);
+        // Calendar examples, not a second modular-week algorithm: Monday starts
+        // at 09:00 and ends at 13:00; Friday's next start is Monday at 09:00.
+        // The approaching-start ramp is zero at 08:00, half at 08:30, full at 09:00.
+        for (label, day, minute, inside, until_start, until_end, intensity) in [
+            ("Monday 07:59", 1, 479, 0, 61, 301, 0.0),
+            ("Monday 08:00", 1, 480, 0, 60, 300, 0.0),
+            ("Monday 08:30", 1, 510, 0, 30, 270, 0.5),
+            ("Monday 08:59", 1, 539, 0, 1, 241, 59.0 / 60.0),
+            ("Monday 09:00", 1, 540, 1, 0, 240, 1.0),
+            ("Monday 09:01", 1, 541, 1, 1439, 239, 1.0),
+            ("Monday 12:59", 1, 779, 1, 1201, 1, 1.0),
+            ("Monday 13:00", 1, 780, 0, 1200, 0, 1.0),
+            ("Monday 14:00", 1, 840, 0, 1140, 1380, 0.0),
+            ("Friday 12:59", 5, 779, 1, 4081, 1, 1.0),
+            ("Saturday 09:00", 6, 540, 0, 2880, 3120, 0.0),
+        ] {
+            let result =
+                public_peak_position(SUNDAY_UTC + i64::from(day * 1440 + minute) * 60, weekday);
+            assert_eq!(
+                (
+                    result.inside,
+                    result.minutes_until_start,
+                    result.minutes_until_end,
+                    result.reserved
+                ),
+                (inside, until_start, until_end, 0),
+                "peak fields at {label}"
+            );
+            assert!(
+                (result.intensity - intensity).abs() < 1e-12,
+                "peak intensity at {label}: {} != {intensity}",
+                result.intensity
+            );
+        }
+
+        // Sunday 23:30 UTC is Monday 09:30 at UTC+10; the public wrapper must
+        // forward the offset and weekday flag, not just the local time fields.
+        let mut east = weekday;
+        east.utc_offset_minutes = 600;
+        assert_eq!(
+            public_peak_position(SUNDAY_UTC + 23 * 3600 + 30 * 60, east),
+            UsageCorePeakPosition {
+                inside: 1,
+                minutes_until_start: 1410,
+                minutes_until_end: 210,
+                reserved: 0,
+                intensity: 1.0,
+            }
+        );
+    }
+
+    #[test]
+    fn public_peak_ffi_floors_pre_epoch_seconds_at_midnight() {
+        // 1969-12-31 23:59:59 is still Wednesday's 23:59 minute, one minute
+        // before the daily [00:00, 00:01) window. Integer division toward zero
+        // would incorrectly place it inside Thursday's first minute.
+        let daily = settings(0, 1, false);
+        for (unix_seconds, inside, until_start, until_end, intensity) in [
+            (-1, 0, 1, 2, 59.0 / 60.0),
+            (-60, 0, 1, 2, 59.0 / 60.0),
+            (-61, 0, 2, 3, 58.0 / 60.0),
+            (0, 1, 0, 1, 1.0),
+            (59, 1, 0, 1, 1.0),
+            (60, 0, 1439, 0, 1.0),
+        ] {
+            let result = public_peak_position(unix_seconds, daily);
+            assert_eq!(
+                (
+                    result.inside,
+                    result.minutes_until_start,
+                    result.minutes_until_end,
+                    result.reserved
+                ),
+                (inside, until_start, until_end, 0),
+                "peak fields at Unix {unix_seconds}"
+            );
+            assert!(
+                (result.intensity - intensity).abs() < 1e-12,
+                "peak intensity at Unix {unix_seconds}: {} != {intensity}",
+                result.intensity
+            );
+        }
+    }
+
+    #[test]
+    fn public_peak_ffi_disabled_settings_clear_every_output_field() {
+        let mut disabled = settings(9 * 60, 13 * 60, true);
+        disabled.enabled = 0;
+        // Monday 10:00 would be inside the configured window if enabled.
+        assert_eq!(
+            public_peak_position(SUNDAY_UTC + 24 * 3600 + 10 * 3600, disabled),
+            UsageCorePeakPosition::default()
+        );
+    }
+
+    #[test]
+    fn public_peak_ffi_invalid_settings_and_equal_boundaries_return_default() {
+        let valid = settings(9 * 60, 13 * 60, true);
+        // Monday 10:00 is inside the otherwise valid window. Vary one input at
+        // a time so a combined guard cannot let one invalid field hide another.
+        let monday_ten = SUNDAY_UTC + 24 * 3600 + 10 * 3600;
+        for value in [-1, 1440, i32::MIN, i32::MAX] {
+            assert_eq!(
+                public_peak_position(
+                    monday_ten,
+                    UsageCorePeakSettings {
+                        start_minute: value,
+                        ..valid
+                    },
+                ),
+                UsageCorePeakPosition::default(),
+                "invalid start minute {value}"
+            );
+            assert_eq!(
+                public_peak_position(
+                    monday_ten,
+                    UsageCorePeakSettings {
+                        end_minute: value,
+                        ..valid
+                    },
+                ),
+                UsageCorePeakPosition::default(),
+                "invalid end minute {value}"
+            );
+        }
+        for value in [-781, 841, i32::MIN, i32::MAX] {
+            assert_eq!(
+                public_peak_position(
+                    monday_ten,
+                    UsageCorePeakSettings {
+                        utc_offset_minutes: value,
+                        ..valid
+                    },
+                ),
+                UsageCorePeakPosition::default(),
+                "invalid UTC offset {value}"
+            );
+        }
+        for boundary in [0, 540, 1439] {
+            assert_eq!(
+                public_peak_position(
+                    monday_ten,
+                    UsageCorePeakSettings {
+                        start_minute: boundary,
+                        end_minute: boundary,
+                        ..valid
+                    },
+                ),
+                UsageCorePeakPosition::default(),
+                "equal boundaries {boundary} mean no peak window"
+            );
+        }
+    }
+
     #[test]
     fn edit_time_accepts_documented_formats_and_preserves_negative_zero_hour() {
         for (text, expected) in [
@@ -262,7 +450,10 @@ mod tests {
             "9:",
             ":30",
             "--1",
+            "++1",
+            "-+1",
             "9:-1",
+            "1:+2",
             "1:2:3",
             "1.2.3",
             "9223372036854775807",
@@ -294,6 +485,32 @@ mod tests {
                 minutes
             );
         }
+    }
+
+    #[test]
+    fn utc_offset_ffi_emits_exact_canonical_strings() {
+        // A round trip alone cannot distinguish +00:00 from -00:00, or the
+        // required colon format from other input formats accepted by the parser.
+        for (minutes, expected) in [
+            (-780, "-13:00"),
+            (-30, "-00:30"),
+            (0, "+00:00"),
+            (45, "+00:45"),
+            (840, "+14:00"),
+        ] {
+            let mut output = [0xaaaau16; 8];
+            let length = unsafe { usage_core_format_utc_offset(minutes, output.as_mut_ptr(), 7) };
+            assert_eq!(length, 6);
+            assert_eq!(String::from_utf16(&output[..6]).unwrap(), expected);
+            assert_eq!(output[6], 0);
+            assert_eq!(output[7], 0xaaaa);
+        }
+        let mut short = [0xaaaau16; 7];
+        assert_eq!(
+            unsafe { usage_core_format_utc_offset(0, short.as_mut_ptr(), 6) },
+            0
+        );
+        assert_eq!(short, [0, 0xaaaa, 0xaaaa, 0xaaaa, 0xaaaa, 0xaaaa, 0xaaaa]);
     }
 
     #[test]
