@@ -98,7 +98,8 @@ int wmain(int argc, wchar_t** argv)
         Factory factory{};
         std::memcpy(&factory, &entry, sizeof(factory));
         ITMPlugin* plugin = factory();
-        Require(plugin != nullptr && plugin == factory(), "plugin singleton is invalid");
+        if (plugin == nullptr) throw std::runtime_error("plugin factory returned null");
+        Require(plugin == factory(), "plugin singleton is invalid");
         Require(plugin->GetAPIVersion() == 7, "unexpected TrafficMonitor plugin ABI");
         Require(std::wstring(plugin->GetInfo(ITMPlugin::TMI_VERSION)) == argv[3], "reported version differs from package");
         plugin->OnInitialize(nullptr);
@@ -113,7 +114,7 @@ int wmain(int argc, wchar_t** argv)
         for (int index = 0; index < 3; ++index)
         {
             IPluginItem* item = plugin->GetItem(index);
-            Require(item != nullptr, "configured provider item is missing");
+            if (item == nullptr) throw std::runtime_error("configured provider item is missing");
             const std::wstring id(item->GetItemId());
             Require(!id.empty() && identifiers.insert(id).second, "provider IDs must be nonempty and unique");
             Require(item->GetItemName() != nullptr && item->GetItemValueText() != nullptr, "null item text");
