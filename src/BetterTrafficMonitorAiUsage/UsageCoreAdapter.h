@@ -21,7 +21,13 @@ struct UsageHistoryPoint {
 
 class CUsageCoreAdapter {
 public:
+    using RefreshFunction = int32_t (*)(UsageCoreSnapshot*);
+    using ClockFunction = unsigned long long (*)();
+
+    explicit CUsageCoreAdapter(RefreshFunction refresh = usage_core_refresh,
+        ClockFunction clock = MonotonicMilliseconds);
     void RefreshIfNeeded();
+    UsageCoreSnapshot GetSnapshot() const;
     UsageMetric GetMetric(UsageWindow window) const;
     long long GetClaudeNextResetAtUnixSeconds() const;
     long long GetZCodeNextResetAtUnixSeconds() const;
@@ -30,11 +36,16 @@ public:
     long long GetZCodeLimitUnits(UsageWindow window) const;
     std::vector<UsageHistoryPoint> GetHistory(UsageWindow window) const;
 private:
+    static unsigned long long MonotonicMilliseconds();
     const UsageCoreMetric& MetricFor(UsageWindow window) const;
 
+    const RefreshFunction m_refresh;
+    const ClockFunction m_clock;
+    std::mutex m_refresh_mutex;
     mutable std::mutex m_mutex;
     UsageCoreSnapshot m_snapshot{};
     unsigned long long m_last_refresh_tick{};
+    bool m_has_refreshed{};
 };
 
 #define g_usage_core UsageCoreAdapterInstance()

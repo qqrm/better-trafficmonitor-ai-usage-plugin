@@ -33,10 +33,31 @@ typedef struct UsageCoreSnapshot {
     int64_t zcode_7d_limit_units;
 } UsageCoreSnapshot;
 
+typedef struct UsageCorePeakSettings {
+    int32_t enabled;
+    int32_t start_minute;
+    int32_t end_minute;
+    int32_t utc_offset_minutes;
+    int32_t weekdays_only;
+} UsageCorePeakSettings;
+
+typedef struct UsageCorePeakPosition {
+    int32_t inside;
+    int32_t minutes_until_start;
+    int32_t minutes_until_end;
+    int32_t reserved;
+    double intensity;
+} UsageCorePeakPosition;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 int32_t usage_core_refresh(UsageCoreSnapshot* out);
+// UTF-16 length excludes NUL. Invalid input leaves the setting at fallback.
+int32_t usage_core_parse_minutes(const uint16_t* text, uint32_t length, int32_t fallback);
+// Capacity includes NUL; returns written length, or zero with an empty output.
+uint32_t usage_core_format_utc_offset(int32_t minutes, uint16_t* out, uint32_t capacity);
+int32_t usage_core_peak_position(int64_t unix_seconds, const UsageCorePeakSettings* settings, UsageCorePeakPosition* out);
 #ifdef __cplusplus
 }
 #endif

@@ -1,65 +1,257 @@
 name: Release
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI, quality-gate, CodeQL]
+    types: [completed]
     branches: [main]
 
 permissions:
-  contents: write
+  actions: read
+  contents: read
 
 concurrency:
   group: release-main
   cancel-in-progress: false
 
 jobs:
-  release:
-    # The plugin targets TrafficMonitor's v143/MFC toolchain. The moving
-    # windows-latest image now uses Visual Studio 2026 without x64 MFC.
-    runs-on: windows-2022
+  gates:
+    if: >-
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.id == github.event.repository.id &&
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      ready: ${{ steps.gates.outputs.ready }}
+      source_sha: ${{ steps.gates.outputs.source_sha }}
+      runs: ${{ steps.gates.outputs.runs }}
+      artifact_id: ${{ steps.gates.outputs.artifact_id }}
+      artifact_digest: ${{ steps.gates.outputs.artifact_digest }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Require successful main-push workflows for this exact commit
+        id: gates
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+          script: |
+            const { owner, repo } = context.repo;
+            const trigger = context.payload.workflow_run;
+            const repositoryId = context.payload.repository.id;
+            if (trigger.event !== 'push' || trigger.head_branch !== 'main' ||
+                trigger.head_repository?.id !== repositoryId || trigger.conclusion !== 'success' ||
+                !/^[a-f0-9]{40}$/.test(trigger.head_sha)) {
+              throw new Error('Only successful main pushes from this repository can release');
+            }
+            core.setOutput('ready', 'false');
+            const runs = {};
+            for (const workflow of ['ci.yml', 'quality-gate.yml', 'codeql.yml']) {
+              const candidates = await github.paginate(github.rest.actions.listWorkflowRuns, {
+                owner, repo, workflow_id: workflow, head_sha: trigger.head_sha,
+                event: 'push', branch: 'main', per_page: 100,
+              });
+              const latest = candidates.filter(run => run.head_sha === trigger.head_sha &&
+                run.event === 'push' && run.head_branch === 'main' &&
+                run.head_repository?.id === repositoryId).sort((a, b) => b.id - a.id)[0];
+              if (!latest || latest.status !== 'completed' || latest.conclusion !== 'success') {
+                core.notice(`Waiting for ${workflow} to succeed on ${trigger.head_sha}`);
+                return;
+              }
+              runs[workflow] = latest.id;
+            }
+            const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+              owner, repo, run_id: runs['ci.yml'], per_page: 100,
+            });
+            const matches = artifacts.filter(artifact =>
+              artifact.name === 'BetterTrafficMonitorAiUsage-x64' && !artifact.expired);
+            if (matches.length !== 1) throw new Error('Expected exactly one unexpired CI package artifact');
+            const artifact = matches[0];
+            if (artifact.workflow_run?.id !== runs['ci.yml'] ||
+                artifact.workflow_run?.head_sha !== trigger.head_sha ||
+                artifact.workflow_run?.head_repository_id !== repositoryId ||
+                !/^sha256:[a-f0-9]{64}$/.test(artifact.digest || '')) {
+              throw new Error('CI artifact provenance or digest is missing or inconsistent');
+            }
+            core.setOutput('source_sha', trigger.head_sha);
+            core.setOutput('runs', JSON.stringify(runs));
+            core.setOutput('artifact_id', artifact.id);
+            core.setOutput('artifact_digest', artifact.digest);
+            core.setOutput('ready', 'true');
+
+  publish:
+    needs: gates
+    if: needs.gates.outputs.ready == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    env:
+      SOURCE_SHA: ${{ needs.gates.outputs.source_sha }}
+      GATE_RUNS: ${{ needs.gates.outputs.runs }}
+    steps:
+      # No checkout or execution of artifact contents in this privileged job.
+      - name: Download the immutable artifact selected from CI
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
+        env:
+          ARTIFACT_ID: ${{ needs.gates.outputs.artifact_id }}
+          ARTIFACT_DIGEST: ${{ needs.gates.outputs.artifact_digest }}
         with:
-          toolchain: stable
-      - id: version
-        name: Read release version
-        shell: pwsh
+          script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const crypto = require('node:crypto');
+            const { data } = await github.rest.actions.downloadArtifact({
+              ...context.repo, artifact_id: Number(process.env.ARTIFACT_ID), archive_format: 'zip',
+            });
+            const bytes = Buffer.from(data);
+            const digest = 'sha256:' + crypto.createHash('sha256').update(bytes).digest('hex');
+            if (digest !== process.env.ARTIFACT_DIGEST) throw new Error('Downloaded artifact digest differs from CI');
+            fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'ci-artifact.zip'), bytes);
+
+      - name: Validate the analyzed DLL, package, and Windows smoke evidence
+        id: evidence
+        shell: python
         run: |
-          $match = Select-String -LiteralPath crates/usage_core/Cargo.toml -Pattern '^version\s*=\s*"(\d+\.\d+\.\d+)"\s*$' | Select-Object -First 1
-          if (-not $match) { throw 'A semantic version is required in crates/usage_core/Cargo.toml' }
-          "version=$($match.Matches[0].Groups[1].Value)" >> $env:GITHUB_OUTPUT
-      - id: release
-        name: Check whether the version is already released
-        shell: pwsh
+          import hashlib, io, json, os, pathlib, re, zipfile
+
+          def require(condition, message):
+              if not condition:
+                  raise RuntimeError(message)
+
+          def sha256(data):
+              return hashlib.sha256(data).hexdigest()
+
+          def entries(archive):
+              result = {}
+              for entry in archive.infolist():
+                  name = entry.filename.replace('\\', '/')
+                  parts = pathlib.PurePosixPath(name).parts
+                  require(parts and not name.startswith('/') and '..' not in parts,
+                          'Unsafe ZIP entry')
+                  require(name not in result, 'Duplicate ZIP entry')
+                  result[name] = entry
+              return result
+
+          root = pathlib.Path(os.environ['RUNNER_TEMP'])
+          source_sha = os.environ['SOURCE_SHA']
+          require(re.fullmatch(r'[a-f0-9]{40}', source_sha), 'Invalid source commit')
+          with zipfile.ZipFile(root / 'ci-artifact.zip') as artifact:
+              files = entries(artifact)
+              prefix = 'artifacts/native-build/'
+              build_bytes = artifact.read(files[prefix + 'build.json'])
+              smoke_bytes = artifact.read(files[prefix + 'dll-smoke.json'])
+              build = json.loads(build_bytes.decode('utf-8-sig'))
+              smoke = json.loads(smoke_bytes.decode('utf-8-sig'))
+              version = build.get('version', '')
+              require(re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', version),
+                      'Invalid release version')
+              require(build.get('sourceSha') == source_sha and smoke.get('sourceSha') == source_sha,
+                      'Build or smoke evidence belongs to another source commit')
+              require(build.get('nativeAnalysisRequested') is True and
+                      build.get('nativeCompilerLog') == 'msbuild.log', 'Native analysis evidence missing')
+              require(smoke.get('status') == 'passed' and smoke.get('actualTrafficMonitor') is False and
+                      smoke.get('externalProviderPolling') is False, 'Windows DLL smoke evidence missing')
+              expected_checks = {'factory', 'API', 'version', 'index bounds', 'provider IDs',
+                                 'initialization', 'cached text', 'GDI drawing', 'visibility configuration'}
+              require(expected_checks.issubset(smoke.get('checks', [])), 'Incomplete DLL smoke checks')
+              package_name = f'BetterTrafficMonitorAiUsage_v{version}_x64.zip'
+              package = artifact.read(files['dist/' + package_name])
+              checksum = artifact.read(files['dist/' + package_name + '.sha256'])
+              package_hash = sha256(package)
+              require(build.get('zipSha256') == package_hash and smoke.get('zipSha256') == package_hash,
+                      'Package hash differs from analyzed and smoke-tested build')
+              require(checksum.decode('ascii').strip() == f'{package_hash}  {package_name}',
+                      'Package checksum file is inconsistent')
+              with zipfile.ZipFile(io.BytesIO(package)) as archive:
+                  contents = entries(archive)
+                  require(set(contents).issubset({'plugins/', 'plugins/BetterTrafficMonitorAiUsage.dll'}) and
+                          'plugins/BetterTrafficMonitorAiUsage.dll' in contents, 'Unexpected package contents')
+                  dll_hash = sha256(archive.read(contents['plugins/BetterTrafficMonitorAiUsage.dll']))
+              require(build.get('dllSha256') == dll_hash and smoke.get('dllSha256') == dll_hash,
+                      'DLL hash differs from analyzed and smoke-tested DLL')
+              log = artifact.read(files[prefix + 'msbuild.log'])
+              require(log, 'Native compiler log is empty')
+              release = root / 'verified-release'
+              release.mkdir()
+              for name, data in [(package_name, package), (package_name + '.sha256', checksum),
+                                 ('build.json', build_bytes), ('dll-smoke.json', smoke_bytes), ('msbuild.log', log)]:
+                  (release / name).write_bytes(data)
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+              output.write(f'version={version}\n')
+
+      - name: Recheck gates and publish these exact verified assets
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3
         env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          $tag = "v$env:RELEASE_VERSION"
-          gh release view $tag --json tagName 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            'exists=true' >> $env:GITHUB_OUTPUT
-          } elseif ($LASTEXITCODE -eq 1) {
-            'exists=false' >> $env:GITHUB_OUTPUT
-          } else {
-            throw "Could not determine whether GitHub release $tag exists"
-          }
-          exit 0
-      - name: Build release archive
-        if: steps.release.outputs.exists == 'false'
-        shell: pwsh
-        env:
-          RELEASE_VERSION: ${{ steps.version.outputs.version }}
-        run: ./scripts/build-release.ps1 -Version $env:RELEASE_VERSION
-      - name: Publish GitHub release
-        if: steps.release.outputs.exists == 'false'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          $assets = @(Get-ChildItem dist\*.zip, dist\*.sha256 | ForEach-Object FullName)
-          $tag = "v$env:RELEASE_VERSION"
-          gh release create $tag @assets --target $env:GITHUB_SHA --generate-notes --title "Better TrafficMonitor AI Usage $tag"
+          RELEASE_VERSION: ${{ steps.evidence.outputs.version }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const { owner, repo } = context.repo;
+            const sha = process.env.SOURCE_SHA;
+            const runs = JSON.parse(process.env.GATE_RUNS);
+            const repositoryId = context.payload.repository.id;
+            const requireGates = async () => {
+              for (const workflow of ['ci.yml', 'quality-gate.yml', 'codeql.yml']) {
+                const candidates = await github.paginate(github.rest.actions.listWorkflowRuns, {
+                  owner, repo, workflow_id: workflow, head_sha: sha, event: 'push', branch: 'main', per_page: 100,
+                });
+                const latest = candidates.filter(run => run.head_sha === sha && run.event === 'push' &&
+                  run.head_branch === 'main' && run.head_repository?.id === repositoryId)
+                  .sort((a, b) => b.id - a.id)[0];
+                if (!latest || latest.id !== runs[workflow] || latest.status !== 'completed' ||
+                    latest.conclusion !== 'success') throw new Error(`Gate changed before publication: ${workflow}`);
+              }
+            };
+            await requireGates();
+            const version = process.env.RELEASE_VERSION;
+            if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(version)) {
+              throw new Error('Invalid verified version');
+            }
+            const tag = `v${version}`;
+            const optional = async call => {
+              try { return (await call()).data; }
+              catch (error) { if (error.status === 404) return null; throw error; }
+            };
+            const ref = await optional(() => github.rest.git.getRef({ owner, repo, ref: `tags/${tag}` }));
+            let tagSha;
+            if (ref) {
+              let object = ref.object;
+              for (let depth = 0; object.type === 'tag' && depth < 5; depth++) {
+                object = (await github.rest.git.getTag({ owner, repo, tag_sha: object.sha })).data.object;
+              }
+              if (object.type !== 'commit') throw new Error('Existing version tag does not resolve to a commit');
+              tagSha = object.sha;
+            }
+            const existing = await optional(() => github.rest.repos.getReleaseByTag({ owner, repo, tag }));
+            if (existing) {
+              if (!ref || existing.draft) throw new Error('Existing release requires manual review; it will not be overwritten');
+              if (tagSha !== sha) {
+                const comparison = await github.rest.repos.compareCommits({ owner, repo, base: tagSha, head: sha });
+                if (comparison.data.status !== 'ahead' && comparison.data.status !== 'identical') {
+                  throw new Error('Existing release is not an ancestor of this commit');
+                }
+              }
+              core.notice(`Release ${tag} already exists at ${tagSha}; no assets changed`);
+              return;
+            }
+            if (ref && tagSha !== sha) throw new Error('Unpublished version tag targets another commit');
+            const directory = path.join(process.env.RUNNER_TEMP, 'verified-release');
+            const packageName = `BetterTrafficMonitorAiUsage_v${version}_x64.zip`;
+            const assets = [packageName, packageName + '.sha256', 'build.json', 'dll-smoke.json', 'msbuild.log'];
+            // Create a draft first so a failed upload cannot expose a partial release.
+            const { data: release } = await github.rest.repos.createRelease({
+              owner, repo, tag_name: tag, target_commitish: sha, draft: true,
+              generate_release_notes: true, name: `Better TrafficMonitor AI Usage ${tag}`,
+            });
+            for (const name of assets) {
+              const data = fs.readFileSync(path.join(directory, name));
+              await github.rest.repos.uploadReleaseAsset({
+                owner, repo, release_id: release.id, name, data,
+                headers: { 'content-type': 'application/octet-stream', 'content-length': data.length },
+              });
+            }
+            await requireGates();
+            await github.rest.repos.updateRelease({ owner, repo, release_id: release.id, draft: false });
+            core.notice(`Published ${tag} from CI run ${runs['ci.yml']} at ${sha}`);

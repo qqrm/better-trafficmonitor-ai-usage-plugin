@@ -2,6 +2,7 @@
 /.vs/
 /build/
 /dist/
+/artifacts/
 /bin/
 /obj/
 *.dll

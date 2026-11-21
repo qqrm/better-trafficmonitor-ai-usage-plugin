@@ -1,9 +1,20 @@
-#include "pch.h"
 #include "UsageCoreAdapter.h"
 
 #include <algorithm>
+#include <chrono>
 
 constexpr unsigned long long REFRESH_INTERVAL_MS = 10ULL * 1000ULL;
+
+CUsageCoreAdapter::CUsageCoreAdapter(RefreshFunction refresh, ClockFunction clock)
+    : m_refresh(refresh), m_clock(clock)
+{
+}
+
+unsigned long long CUsageCoreAdapter::MonotonicMilliseconds()
+{
+    return static_cast<unsigned long long>(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+}
 
 CUsageCoreAdapter& UsageCoreAdapterInstance()
 {
@@ -13,15 +24,37 @@ CUsageCoreAdapter& UsageCoreAdapterInstance()
 
 void CUsageCoreAdapter::RefreshIfNeeded()
 {
-    const unsigned long long now = GetTickCount64();
-    std::lock_guard<std::mutex> lock(m_mutex);
-    if (m_last_refresh_tick != 0 && now - m_last_refresh_tick < REFRESH_INTERVAL_MS)
+    // A second polling caller must not queue behind slow provider I/O.
+    std::unique_lock<std::mutex> refresh_lock(m_refresh_mutex, std::try_to_lock);
+    if (!refresh_lock.owns_lock())
         return;
 
+    const unsigned long long now = m_clock();
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (m_has_refreshed && now >= m_last_refresh_tick
+            && now - m_last_refresh_tick < REFRESH_INTERVAL_MS)
+            return;
+    }
+
+    // Readers keep displaying the last complete snapshot while sources poll.
+    // DataRequired itself remains synchronous on TrafficMonitor's monitor thread.
     UsageCoreSnapshot snapshot{};
-    if (usage_core_refresh(&snapshot) != 0)
-        m_snapshot = snapshot;
-    m_last_refresh_tick = now;
+    const bool refreshed = m_refresh(&snapshot) != 0;
+    const unsigned long long completed = m_clock();
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        if (refreshed)
+            m_snapshot = snapshot;
+        m_last_refresh_tick = completed;
+        m_has_refreshed = true;
+    }
+}
+
+UsageCoreSnapshot CUsageCoreAdapter::GetSnapshot() const
+{
+    std::lock_guard<std::mutex> lock(m_mutex);
+    return m_snapshot;
 }
 
 const UsageCoreMetric& CUsageCoreAdapter::MetricFor(UsageWindow window) const

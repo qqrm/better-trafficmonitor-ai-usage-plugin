@@ -3,7 +3,10 @@ mod codex;
 #[cfg(any(windows, test))]
 mod codex_live;
 mod history;
+mod time_logic;
 mod zcode;
+
+pub use time_logic::{UsageCorePeakPosition, UsageCorePeakSettings};
 
 use claude::{load_claude, load_claude_next_reset, newest_claude_cache};
 use codex::load_codex;

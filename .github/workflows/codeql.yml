@@ -17,7 +17,7 @@ concurrency:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     permissions:
       contents: read
@@ -25,18 +25,39 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [actions, c-cpp, python, rust]
+        include:
+          - language: actions
+            os: ubuntu-24.04
+            build-mode: none
+          - language: c-cpp
+            os: windows-2022
+            build-mode: manual
+          - language: python
+            os: ubuntu-24.04
+            build-mode: none
+          - language: rust
+            os: ubuntu-24.04
+            build-mode: none
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Install Rust for the native static library
+        if: matrix.language == 'c-cpp'
+        uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        with:
+          toolchain: 1.100.0
       - name: Initialize CodeQL
         uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           languages: ${{ matrix.language }}
-          build-mode: none
+          build-mode: ${{ matrix.build-mode }}
           queries: security-extended
+      - name: Trace the Windows MSVC and MFC build
+        if: matrix.language == 'c-cpp'
+        shell: pwsh
+        run: ./scripts/build-release.ps1
       - name: Analyze
         uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
