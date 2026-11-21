@@ -57,6 +57,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-release.ps1
 
 The installable ZIP and SHA-256 checksum are written to `dist\`.
 
+For production-bound contract tests, compiled fault controls and the independent
+mutation audit, see [Validation](docs/VALIDATION.md).
+
 ## Privacy
 
 The usage core performs bounded local file reads and calls the OpenAI and z.ai usage endpoints with credentials already stored by their respective clients. HTTPS uses rustls, not Windows SSPI/Schannel. Credentials are not copied into plug-in settings or diagnostics; they are sent only to the respective provider. The plug-in does not start a Codex subprocess, invoke a browser, or modify authentication files.

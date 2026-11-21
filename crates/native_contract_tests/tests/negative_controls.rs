@@ -54,6 +54,45 @@ const MUTATIONS: &[Mutation] = &[
         test: "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
         assertion: "minute=0",
     },
+    // These four faults were independent audit holdouts before the missing
+    // assertions were added. They are now regression controls, not a fresh
+    // estimate of the suite's mutation-detection rate.
+    Mutation {
+        name: "inside_peak_intensity_zero",
+        file: "crates/usage_core/src/time_logic.rs",
+        before: "    result.intensity = if result.inside != 0 {\n        1.0\n",
+        after: "    result.intensity = if result.inside != 0 {\n        0.0\n",
+        package: "usage_core",
+        test: "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        assertion: "peak intensity at Monday 09:00",
+    },
+    Mutation {
+        name: "swap_unchecked_credit_abi_fields",
+        file: "include/usage_core.h",
+        before: "    int64_t zcode_5h_limit_units;\n    int64_t zcode_7d_used_units;",
+        after: "    int64_t zcode_7d_used_units;\n    int64_t zcode_5h_limit_units;",
+        package: "native_contract_tests",
+        test: "tests::native_and_rust_snapshot_layouts_match_and_copy_preserves_canaries",
+        assertion: "ABI field UsageCoreSnapshot.zcode_5h_limit_units",
+    },
+    Mutation {
+        name: "failed_refresh_publishes_empty_snapshot",
+        file: "src/BetterTrafficMonitorAiUsage/UsageCoreAdapter.cpp",
+        before: "    const bool refreshed = m_refresh(&snapshot) != 0;",
+        after: "    const bool refreshed = m_refresh(&snapshot) >= 0;",
+        package: "native_contract_tests",
+        test: "tests::failed_refresh_keeps_last_successful_snapshot_and_is_throttled",
+        assertion: "assertion `left == right` failed",
+    },
+    Mutation {
+        name: "negative_timestamps_truncate_to_zero",
+        file: "crates/usage_core/src/time_logic.rs",
+        before: "unix_seconds.div_euclid(60)",
+        after: "(unix_seconds / 60)",
+        package: "usage_core",
+        test: "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        assertion: "peak fields at Unix -1",
+    },
 ];
 
 fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {

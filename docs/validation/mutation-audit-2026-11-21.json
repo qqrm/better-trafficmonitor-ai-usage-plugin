@@ -1,0 +1,1014 @@
+{
+  "audit_date": "2026-11-21",
+  "platform": "Linux x86_64",
+  "rust": "1.100.0",
+  "cargo_mutants": "27.1.0",
+  "published_before_head": "5215b0e6655b27889ccd5b27fd6a4000f8007897",
+  "published_before_blobs_matched": 31,
+  "production_logic_unchanged": true,
+  "project_mutation_score": null,
+  "scope": "All82 default-generated mutations for time_logic.rs: constants,digits,parse_minutes,format_utc_offset,peak_position_at. Rust unsafe extern wrappers and C++ are not automatically mutated by this sweep.",
+  "command": "cargo mutants --file crates/usage_core/src/time_logic.rs --test-workspace true --jobs 2 --jobserver-tasks 4 --timeout 30 --build-timeout 180 --cargo-arg=--locked --cargo-arg=--offline",
+  "before": {
+    "total_mutants": 82,
+    "caught": 66,
+    "missed": 15,
+    "unviable": 1,
+    "timeout": 0
+  },
+  "after": {
+    "total_mutants": 82,
+    "caught": 80,
+    "missed": 1,
+    "unviable": 1,
+    "timeout": 0,
+    "ordinary_test_failures": 77,
+    "test_executable_aborts": 3,
+    "reviewed_equivalent_survivors": 1
+  },
+  "raw_cargo_mutants_exit_code_before": 2,
+  "raw_cargo_mutants_exit_code_after": 2,
+  "exit_code_note": "The final raw command still exits2 for its one equivalent survivor; no exclusions or success override were used.",
+  "after_source_sha256": {
+    "crates/native_contract_tests/native_bridge.cpp": "86aab1f8d8cc832b1c9ea311bc5c66f7af6b00bc95b3181c3ec2fc89081f0d65",
+    "crates/native_contract_tests/src/lib.rs": "04a029808f0cfc2a142e6548370ecbaab2f220788b0a2348417c6895818949e5",
+    "crates/native_contract_tests/tests/negative_controls.rs": "2ba94b8352f403655fd74f81adc7ec0a9d76b84b55570c3f47184f874216ecc7",
+    "crates/usage_core/src/time_logic.rs": "147561a077295d2a439abd4206ab95fe035db96365bf4fe58c1eb928487e6262"
+  },
+  "mutants": [
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:4:33: replace * with +",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:5:33: replace * with +",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:5:33: replace * with /",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "test executable SIGABRT from mutation-induced non-unwinding panic"
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:42:5: replace digits -> Option<i32> with None",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi",
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:42:5: replace digits -> Option<i32> with Some(0)",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::edit_time_rejects_junk_invalid_minutes_and_overflow",
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi",
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:42:5: replace digits -> Option<i32> with Some(1)",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::edit_time_rejects_junk_invalid_minutes_and_overflow",
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour",
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:42:5: replace digits -> Option<i32> with Some(-1)",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi",
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:42:24: replace || with && in digits",
+      "before": "MissedMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::edit_time_rejects_junk_invalid_minutes_and_overflow"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:42:27: delete ! in digits",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour",
+        "time_logic::tests::edit_time_rejects_junk_invalid_minutes_and_overflow",
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:4:33: replace * with /",
+      "before": "Unviable",
+      "after": "Unviable",
+      "after_build_status": {
+        "Failure": 101
+      },
+      "review": "Generated MINUTES_PER_DAY=24/60=0 makes a test remainder-by-zero expression fail compilation; not credited as test detection."
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:49:5: replace parse_minutes -> Option<i32> with None",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour",
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:49:5: replace parse_minutes -> Option<i32> with Some(1)",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour",
+        "time_logic::tests::edit_time_rejects_junk_invalid_minutes_and_overflow",
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:49:5: replace parse_minutes -> Option<i32> with Some(-1)",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour",
+        "time_logic::tests::edit_time_rejects_junk_invalid_minutes_and_overflow",
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:49:5: replace parse_minutes -> Option<i32> with Some(0)",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi",
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour",
+        "time_logic::tests::edit_time_rejects_junk_invalid_minutes_and_overflow"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:57:17: delete match arm 1 | 2 in parse_minutes",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:58:17: delete match arm 3 | 4 in parse_minutes",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:58:33: replace / with % in parse_minutes",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:58:33: replace / with * in parse_minutes",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:58:46: replace % with / in parse_minutes",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::edit_time_rejects_junk_invalid_minutes_and_overflow",
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:58:46: replace % with + in parse_minutes",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:63:8: delete ! in parse_minutes",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour",
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi",
+        "time_logic::tests::edit_time_rejects_junk_invalid_minutes_and_overflow"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:63:34: replace || with && in parse_minutes",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::edit_time_rejects_junk_invalid_minutes_and_overflow"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:63:37: delete ! in parse_minutes",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi",
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour",
+        "time_logic::tests::edit_time_rejects_junk_invalid_minutes_and_overflow"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:67:24: delete - in parse_minutes",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi",
+        "time_logic::tests::edit_time_accepts_documented_formats_and_preserves_negative_zero_hour"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:71:5: replace format_utc_offset -> Option<String> with None",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi",
+        "time_logic::tests::utc_offset_ffi_emits_exact_canonical_strings"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:71:5: replace format_utc_offset -> Option<String> with Some(String::new())",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi",
+        "time_logic::tests::utc_offset_ffi_emits_exact_canonical_strings"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:71:5: replace format_utc_offset -> Option<String> with Some(\"xyzzy\".into())",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi",
+        "time_logic::tests::utc_offset_ffi_emits_exact_canonical_strings"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:71:8: delete ! in format_utc_offset",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi",
+        "time_logic::tests::utc_offset_ffi_emits_exact_canonical_strings"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:71:14: replace * with + in format_utc_offset",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi",
+        "time_logic::tests::utc_offset_ffi_emits_exact_canonical_strings"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:71:14: replace * with / in format_utc_offset",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi",
+        "time_logic::tests::utc_offset_ffi_emits_exact_canonical_strings"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:71:10: delete - in format_utc_offset",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::utc_offset_ffi_emits_exact_canonical_strings",
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:71:24: replace * with + in format_utc_offset",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::utc_offset_ffi_emits_exact_canonical_strings",
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:71:24: replace * with / in format_utc_offset",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::utc_offset_ffi_emits_exact_canonical_strings",
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:74:27: replace < with == in format_utc_offset",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi",
+        "time_logic::tests::utc_offset_ffi_emits_exact_canonical_strings"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:74:27: replace < with > in format_utc_offset",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::utc_offset_ffi_emits_exact_canonical_strings",
+        "time_logic::tests::every_supported_utc_offset_round_trips_through_the_shipping_ffi"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:74:27: replace < with <= in format_utc_offset",
+      "before": "MissedMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::utc_offset_ffi_emits_exact_canonical_strings"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:84:9: replace || with && in peak_position_at",
+      "before": "MissedMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_invalid_settings_and_equal_boundaries_return_default"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:80:5: replace peak_position_at -> UsageCorePeakPosition with Default::default()",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:83:9: replace || with && in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_invalid_settings_and_equal_boundaries_return_default",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:82:9: replace || with && in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_disabled_settings_clear_every_output_field",
+        "time_logic::tests::public_peak_ffi_invalid_settings_and_equal_boundaries_return_default",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:81:25: replace == with != in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_disabled_settings_clear_every_output_field",
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:82:12: delete ! in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::public_peak_ffi_invalid_settings_and_equal_boundaries_return_default",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:83:12: delete ! in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow",
+        "time_logic::tests::public_peak_ffi_invalid_settings_and_equal_boundaries_return_default",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:84:12: delete ! in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_invalid_settings_and_equal_boundaries_return_default",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:84:18: replace * with + in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:84:18: replace * with / in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:84:14: delete - in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:84:28: replace * with + in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:84:28: replace * with / in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:88:39: replace - with + in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_invalid_settings_and_equal_boundaries_return_default",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:88:39: replace - with / in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "test executable SIGABRT from mutation-induced non-unwinding panic"
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:90:15: replace == with != in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_invalid_settings_and_equal_boundaries_return_default",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:98:9: replace + with - in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:98:9: replace + with * in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:97:9: replace + with - in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:97:9: replace + with * in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:98:13: replace * with + in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:98:13: replace * with / in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:100:42: replace != with == in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:108:43: replace + with - in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:108:43: replace + with * in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:108:25: replace * with + in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:108:25: replace * with / in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:109:25: replace + with - in peak_position_at",
+      "before": "MissedMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:109:25: replace + with * in peak_position_at",
+      "before": "MissedMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:110:55: replace < with == in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow",
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:110:55: replace < with > in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:110:55: replace < with <= in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:110:17: replace - with + in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::weekly_schedule_is_periodic_and_respects_offsets_without_overflow",
+        "time_logic::tests::weekday_overnight_tail_belongs_to_its_start_day",
+        "time_logic::tests::weekday_schedule_uses_the_real_epoch_day_and_exact_boundaries",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:110:17: replace - with / in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "test executable SIGABRT from mutation-induced non-unwinding panic"
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:113:46: replace - with + in peak_position_at",
+      "before": "MissedMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:113:46: replace - with / in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:114:40: replace - with + in peak_position_at",
+      "before": "MissedMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:114:40: replace - with / in peak_position_at",
+      "before": "CaughtMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::daily_overnight_window_matches_every_minute_including_week_wrap",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:118:41: replace != with == in peak_position_at",
+      "before": "MissedMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:122:20: replace < with == in peak_position_at",
+      "before": "MissedMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:122:20: replace < with > in peak_position_at",
+      "before": "MissedMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:122:20: replace < with <= in peak_position_at",
+      "before": "MissedMutant",
+      "after": "MissedMutant",
+      "after_build_status": "Success",
+      "review": "Equivalent at nearest=60: the added branch evaluates1.0-60.0/60.0=0.0, equal to the original else branch."
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:123:17: replace - with + in peak_position_at",
+      "before": "MissedMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:123:17: replace - with / in peak_position_at",
+      "before": "MissedMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:123:38: replace / with % in peak_position_at",
+      "before": "MissedMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight",
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity"
+      ]
+    },
+    {
+      "mutation": "crates/usage_core/src/time_logic.rs:123:38: replace / with * in peak_position_at",
+      "before": "MissedMutant",
+      "after": "CaughtMutant",
+      "after_build_status": "Success",
+      "after_detection": "ordinary test failure",
+      "failing_tests": [
+        "time_logic::tests::public_peak_ffi_reports_exact_boundaries_countdowns_and_intensity",
+        "time_logic::tests::public_peak_ffi_floors_pre_epoch_seconds_at_midnight"
+      ]
+    }
+  ]
+}
